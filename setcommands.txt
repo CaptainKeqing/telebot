@@ -1,0 +1,7 @@
+start - Starts the bot
+help - Tells you what dono bot can do
+sorry - Apologise for shouting!
+need - Start adding groceries to buy
+done - Finish adding groceries
+remove - Specify indexes to remove from list
+clear - Clear grocery list
