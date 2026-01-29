@@ -1,5 +1,4 @@
 import logging
-import pickle
 
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes
@@ -26,40 +25,6 @@ async def sorry_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     global isAngry
     isAngry = False
     await update.message.reply_text("I accept your apology.")
-
-
-# GroceryManager commands
-async def need_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = context._user_id
-    print(f"User {user} starting to add items...")
-    response = GM.handle_need_command(user)
-    await update.message.reply_text(response)
-
-async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = context._user_id
-    print(f"User {user} is done...")
-    response = GM.handle_done_command(user)
-    await update.message.reply_text(response)
-
-async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = context._user_id
-    args = context.args
-    print(f"User {user} is removing... {args}")
-    print(f"Exp. {context._user_id}")
-    response = GM.handle_remove_command(user, args)
-    await update.message.reply_text(response)
-
-async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = context._user_id
-    print(f"User {user} is clearing grocery list...")
-    response = GM.handle_clear_command(user)
-    await update.message.reply_text(response)
-
-async def display_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = context._user_id
-    print(f"User {user} is displaying grocery list...")
-    response = GM.handle_display_command(user)
-    await update.message.reply_text(response)
 
 # ERRORS
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -129,12 +94,12 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("sorry", sorry_command))
-    app.add_handler(CommandHandler("need", need_command))
-    app.add_handler(CommandHandler("done", done_command))
-    app.add_handler(CommandHandler("remove", remove_command, has_args=True))
-    app.add_handler(CommandHandler("clear", clear_command))
-    app.add_handler(CommandHandler("display", display_command))
-    # TODO: Fix done/display commands, error Message text is empty (i think the bot trying to relp with nothing)
+    app.add_handler(CommandHandler("need", GM.need_command))
+    app.add_handler(CommandHandler("done", GM.done_command))
+    app.add_handler(CommandHandler("remove", GM.remove_command))
+    app.add_handler(CommandHandler("clear", GM.clear_command))
+    app.add_handler(CommandHandler("display", GM.display_command))
+
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     app.add_error_handler(error)

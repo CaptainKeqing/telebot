@@ -53,34 +53,43 @@ class GroceryManager:
     def get_expected_user(self) -> int:
         return self.expectedUser
 
-    def handle_need_command(self, user: int) -> str:
+    # GroceryManager commands
+    async def need_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = context._user_id
         print(f"User {user} invoking need command")
         if self.isActive:
             print("Trying to start 2 consecutive buy operations... Not entertaining")
-            return "Sorry! I cannot serve 2 people at once! Please wait till the other user has" \
-            "finished adding to the list."
+            await update.message.reply_text("Sorry! I cannot serve 2 people at once! Please wait till the other user has" \
+            " finished adding to the list.")
+            return
         self.isActive = True
         self.expectedUser = user
-        return "What do you need to buy?"
+        await update.message.reply_text("What do you need to buy?")
 
-    def handle_done_command(self, user: int) -> str:
+    async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = context._user_id
+
         print(f"User {user} invoking done command")
         if not self.isActive:
-            return "Can't be done with what you haven't started!"
+            await update.message.reply_text("Can't be done with what you haven't started!")
+            return
 
         if user != self.expectedUser:
             print("Other user trying to stop buy operation. Ignoring...")
-            return "Don't be rude, let him finish."
+            await update.message.reply_text("Don't be rude, let him finish.")
+            return
 
         self.isActive = False
         self.expectedUser = -1
         response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
-        return response
+        await update.message.reply_text(response)
 
-    def handle_remove_command(self, user: int, args: list[str]) -> str:
+    async def remove_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = context._user_id
+        args = context.args
         print(f"User {user} invoking remove command")
         if self.isActive and user != self.expectedUser:
-            return "Another user is currently adding items. Please wait until he/she is finished."
+            await update.message.reply_text("Another user is currently adding items. Please wait until he/she is finished.")
         descending_inds = []
         for ind in args:
             if ind.isdigit():
@@ -88,24 +97,30 @@ class GroceryManager:
 
         descending_inds.sort(reverse=True)
 
+        if len(descending_inds) == 0:
+            await update.message.reply_text("Please specify an index to remove")
+            return
+
         for ind in descending_inds:
             print(f"Removing {ind} from list")
             self._glist.remove(ind)
         
         response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
-        return response
-                
+        await update.message.reply_text(response)
 
-    def handle_clear_command(self, user: int) -> str:
+    async def clear_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = context._user_id
         print(f"User {user} invoking clear command")
         if self.isActive:
-            return "Can't clear list while user is actively adding items."
-        return "Grocery list has been cleared."
+            await update.message.reply_text("Can't clear list while user is actively adding items.")
+            return
+        await update.message.reply_text("Grocery list has been cleared.")
 
-    def handle_display_command(self, user: int) -> str:
+    async def display_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = context._user_id
         print(f"User {user} invoking display command")
         response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
-        return self._glist.display()
+        await update.message.reply_text(response)
 
     # Good to have functions
     def get_cost(self, item: str):
