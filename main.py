@@ -1,4 +1,5 @@
 import logging
+import pickle
 
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes
@@ -54,8 +55,12 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     response = GM.handle_clear_command(user)
     await update.message.reply_text(response)
 
-# TODO: Make a displat command
-# TODO: Add save to disk on program end, to save list
+async def display_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = context._user_id
+    print(f"User {user} is displaying grocery list...")
+    response = GM.handle_display_command(user)
+    await update.message.reply_text(response)
+
 # ERRORS
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} cause error {context.error}")
@@ -128,7 +133,8 @@ def main() -> None:
     app.add_handler(CommandHandler("done", done_command))
     app.add_handler(CommandHandler("remove", remove_command, has_args=True))
     app.add_handler(CommandHandler("clear", clear_command))
-
+    app.add_handler(CommandHandler("display", display_command))
+    # TODO: Fix done/display commands, error Message text is empty (i think the bot trying to relp with nothing)
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     app.add_error_handler(error)
@@ -136,6 +142,8 @@ def main() -> None:
     print("Polling...")
     app.run_polling(poll_interval=3)
 
+    # On app shutdown
+    GM.save()
 
 
 if __name__ == '__main__':

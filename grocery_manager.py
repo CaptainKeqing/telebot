@@ -1,4 +1,5 @@
-import pprint
+import os
+import pickle
 import random
 
 from telegram import Update
@@ -27,11 +28,20 @@ class GroceryList:
 
 class GroceryManager:
     def __init__(self):
-        self._glist: GroceryList = GroceryList()
+        self.SAVE_FILE = "GM.pickle"
+        if os.path.exists(self.SAVE_FILE):
+            with open(self.SAVE_FILE, "rb") as f:
+                self._glist: GroceryList = pickle.load(f)
+        else:
+            self._glist: GroceryList = GroceryList()
         self.isActive: bool = False
         self.expectedUser: int = -1
 
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack"]
+    
+    def save(self):
+        with open(self.SAVE_FILE, "wb") as f:
+            pickle.dump(self._glist, f, pickle.HIGHEST_PROTOCOL) # Save the whole GroceryList, might add more fields in future
 
     def handle_message(self, user_msg: str) -> str:
         print("GM handling message")
@@ -69,9 +79,8 @@ class GroceryManager:
 
     def handle_remove_command(self, user: int, args: list[str]) -> str:
         print(f"User {user} invoking remove command")
-        if self.isActive:
-            if user != self.expectedUser:
-                return "Another user is currently adding items. Please wait until he/she is finished."
+        if self.isActive and user != self.expectedUser:
+            return "Another user is currently adding items. Please wait until he/she is finished."
         descending_inds = []
         for ind in args:
             if ind.isdigit():
@@ -80,8 +89,11 @@ class GroceryManager:
         descending_inds.sort(reverse=True)
 
         for ind in descending_inds:
-            print(f"Removing {ind+1} from list")
+            print(f"Removing {ind} from list")
             self._glist.remove(ind)
+        
+        response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
+        return response
                 
 
     def handle_clear_command(self, user: int) -> str:
@@ -89,6 +101,11 @@ class GroceryManager:
         if self.isActive:
             return "Can't clear list while user is actively adding items."
         return "Grocery list has been cleared."
+
+    def handle_display_command(self, user: int) -> str:
+        print(f"User {user} invoking display command")
+        response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
+        return self._glist.display()
 
     # Good to have functions
     def get_cost(self, item: str):
