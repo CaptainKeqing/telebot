@@ -27,7 +27,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 # ERRORS
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print(f"Update {update} cause error {context.error}")
+    print(f"Update {update} cause error {context.error.with_traceback(None)}")
 
 # MESSAGE HANDLING
 async def handle_response(user_msg: str, user: int, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -81,7 +81,7 @@ def main() -> None:
     app.add_error_handler(error)
 
     print("Polling...")
-    app.run_polling(poll_interval=0.5)
+    app.run_polling(poll_interval=0.1)
 
     # On app shutdown
     GM.save()

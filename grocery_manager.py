@@ -46,12 +46,22 @@ class GroceryManager:
 
         self.fpq = FairpriceQuerier()
         self.product_options = []
-        self.selected_product = 0
+        self.po_start_window = 0
+        self.window_size = 5
 
-        self.button_left = InlineKeyboardButton("L", callback_data="L")
-        self.button_right = InlineKeyboardButton("R", callback_data="R")
-        self.button_select = InlineKeyboardButton("Y", callback_data="Y")
-        self.inline_keyboard = InlineKeyboardMarkup([[self.button_left, self.button_select, self.button_right]])
+        self.sent_media_group = []
+
+        self.button_left = InlineKeyboardButton("⬅️", callback_data="L")
+        self.button_right = InlineKeyboardButton("➡️", callback_data="R")
+        self.button_select = InlineKeyboardButton("✅️", callback_data="Y")
+        self.select_1 = InlineKeyboardButton("1️⃣", callback_data="1")
+        self.select_2 = InlineKeyboardButton("2️⃣", callback_data="2")
+        self.select_3 = InlineKeyboardButton("3️⃣", callback_data="3")
+        self.select_4 = InlineKeyboardButton("4️⃣", callback_data="4")
+        self.select_5 = InlineKeyboardButton("5️⃣", callback_data="5")
+        self.select_button_list = [self.select_1, self.select_2, self.select_3, self.select_4, self.select_5]
+        self.navigation_button_list = [self.button_left, self.button_right]
+        # self.inline_keyboard = InlineKeyboardMarkup([[self.select_left, self.select_select, self.select_right]])
     
     def save(self):
         with open(self.SAVE_FILE, "wb") as f:
@@ -63,40 +73,68 @@ class GroceryManager:
 
         await update.message.reply_text("Give me a while to check...")
         self.product_options = self.fpq.query(item)
-        self.selected_product = 0
+        self.po_start_window = 0
         if len(self.product_options) == 0:
             await update.message.reply_text("Sorry, no items found.")
             return
 
-        # print("Sanity Check")
-        # for i in range(min(5, len(self.product_options))):
-        #     print(self.product_options[i].item_name, self.product_options[i].item_price)
 
-        caption = f'{self.product_options[self.selected_product].item_name} {self.product_options[self.selected_product].item_price}'
-        await update.message.reply_photo(self.product_options[self.selected_product].image_url, caption=caption, reply_markup=self.inline_keyboard)
+        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
+        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
+        self.sent_media_group = await update.effective_chat.send_media_group(image_urls, read_timeout=30)
+        
+        print("Sanity Check")
+        for i in range(min(5, len(self.product_options))):
+            print(self.product_options[i].item_name, self.product_options[i].item_price)
+        
+        caption = "Here are some products:\n"
+        for p in self.product_options[self.po_start_window:po_end_window]:
+            caption += f"{p.item_name} {p.item_price}\n"
+
+        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:po_end_window-self.po_start_window], self.navigation_button_list])
+        await update.effective_chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
 
     async def onInlineButtonPress(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
         if query.data == "L":
-            self.selected_product = (self.selected_product - 1) % len(self.product_options)
+            if len(self.product_options) <= self.window_size:
+                await query.answer("No more!")
+            self.po_start_window -= self.window_size
+            if self.po_start_window < 0:
+                self.po_start_window = len(self.product_options) - self.window_size
+                assert self.po_start_window >= 0
         elif query.data == "R":
-            self.selected_product = (self.selected_product + 1) % len(self.product_options)
-        elif query.data == "Y":
-            product = f"{self.product_options[self.selected_product].item_name} {self.product_options[self.selected_product].item_price}"
+            if len(self.product_options) <= self.window_size:
+                await query.answer("No more!")
+            self.po_start_window += self.window_size
+            if self.po_start_window >= len(self.product_options):
+                self.po_start_window = 0
+        elif query.data in "12345":
+            index = int(query.data) - 1
+            product = f"{self.product_options[index].item_name} {self.product_options[index].item_price}"
             self._glist.add(product)
             await query.message.chat.send_message(self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)])
+
+            await update.effective_chat.delete_messages(self.sent_media_group)
             if query.message.is_accessible:
                 await query.message.delete()
             return
+        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
+        print(self.sent_media_group)
+        await update.effective_chat.delete_messages(self.sent_media_group)
+            
+        if query.message.is_accessible:
+            await query.message.delete()
 
-        try:
-            caption = f'{self.product_options[self.selected_product].item_name} {self.product_options[self.selected_product].item_price}'
-            media = InputMediaPhoto(self.product_options[self.selected_product].image_url, caption=caption)
-            await query.edit_message_media(media, reply_markup=self.inline_keyboard)
-        except TelegramError as e:
-            print("error in callback query", e)
-            await query.get_bot().answer_callback_query(query.id, "Error")
-            raise e
+        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
+        self.sent_media_group = await update.effective_chat.send_media_group(image_urls, read_timeout=30)
+        caption = "Here are some products:\n"
+        for p in self.product_options[self.po_start_window:po_end_window]:
+            caption += f"{p.item_name} {p.item_price}"
+
+
+        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:po_end_window-self.po_start_window], self.navigation_button_list])
+        await update.effective_chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
 
     def get_expected_user(self) -> int:
         return self.expectedUser
