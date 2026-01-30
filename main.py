@@ -1,12 +1,12 @@
 import logging
 
 from telegram import Update
-from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes
+from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes, CallbackQueryHandler
 
 from grocery_manager import GroceryManager
 
+
 logger = logging.getLogger(__name__)
-isAngry = False
 TOKEN_FILE = "bot_token.txt"
 BOT_NAME = "@ddonobot"
 
@@ -18,47 +18,24 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text("Hello! I'm donobot.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("All I do is echo what you say. If you are kind to me, I will respond" \
-    " kindly! If you start shouting... well, you get the idea.")
-
-async def sorry_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    global isAngry
-    isAngry = False
-    await update.message.reply_text("I accept your apology.")
+    await update.message.reply_text("How to use me:\n\n" \
+    "I am a grocery helper bot. Use /need to begin adding groceries. Then, just tell me what you want!\n" \
+    "Use /done to finish adding groceries.\n\n" \
+    "To display your current list, use /display\n\n"
+    "To remove groceries, do /remove <indexes separated by space>\n"
+    )
 
 # ERRORS
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} cause error {context.error}")
 
 # MESSAGE HANDLING
-
-def isUserRude(user_msg: str) -> bool:
-    for word in user_msg.split():
-        if word == word.upper():
-            return True
-    return False
-
-def handle_response(user_msg: str, user: int) -> str:
-    isNormalEcho = True
-    # Check managers for active, else do default echo
+async def handle_response(user_msg: str, user: int, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     for manager in managers:
         if not manager.isActive or user != manager.expectedUser:
             continue
 
-        response = manager.handle_message(user_msg)
-        isNormalEcho = False
-
-    if not isNormalEcho:
-        return response
-
-    # =====================
-    # Normal echo behaviour
-    global isAngry
-    isAngry = isAngry or isUserRude(user_msg)
-    if not isAngry:
-        return user_msg
-    else:
-        return user_msg.upper()
+        await manager.handle_message(user_msg, update, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
@@ -69,21 +46,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     print(f"User {user} said {text}")
 
+    # This is a QOL feature for active users to not need to Tag the bot
+    active_users = [manager.expectedUser for manager in managers]
     # Only reply in group if tagged
     if message_type.lower() == "group" or "supergroup":
-        if BOT_NAME in text:
-            response: str = handle_response(text.replace(BOT_NAME,""), user)
+        if BOT_NAME in text or user in active_users:
+            await handle_response(text.replace(BOT_NAME,""), user, update, context)
         else:
             return
     elif message_type.lower() == "private":
-        response: str = handle_response(text, user)
+        await handle_response(text, user, update, context)
     else:
         print("Unknown type of chat incoming. Ignoring")
-
-    await update.message.reply_text(response)
-
-
-
 
 def main() -> None:
     with open(TOKEN_FILE, "r") as f:
@@ -93,7 +67,8 @@ def main() -> None:
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("sorry", sorry_command))
+
+    # GM commands
     app.add_handler(CommandHandler("need", GM.need_command))
     app.add_handler(CommandHandler("done", GM.done_command))
     app.add_handler(CommandHandler("remove", GM.remove_command))
@@ -102,10 +77,11 @@ def main() -> None:
 
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
+    app.add_handler(CallbackQueryHandler(GM.onInlineButtonPress))
     app.add_error_handler(error)
 
     print("Polling...")
-    app.run_polling(poll_interval=3)
+    app.run_polling(poll_interval=0.5)
 
     # On app shutdown
     GM.save()
