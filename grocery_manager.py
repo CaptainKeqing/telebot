@@ -2,7 +2,7 @@ import os
 import pickle
 import random
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, Bot
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Chat
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
@@ -53,19 +53,56 @@ class GroceryManager:
 
         self.button_left = InlineKeyboardButton("⬅️", callback_data="L")
         self.button_right = InlineKeyboardButton("➡️", callback_data="R")
-        self.button_select = InlineKeyboardButton("✅️", callback_data="Y")
+        self.button_cancel = InlineKeyboardButton("❌️", callback_data="cancel")
         self.select_1 = InlineKeyboardButton("1️⃣", callback_data="1")
         self.select_2 = InlineKeyboardButton("2️⃣", callback_data="2")
         self.select_3 = InlineKeyboardButton("3️⃣", callback_data="3")
         self.select_4 = InlineKeyboardButton("4️⃣", callback_data="4")
         self.select_5 = InlineKeyboardButton("5️⃣", callback_data="5")
         self.select_button_list = [self.select_1, self.select_2, self.select_3, self.select_4, self.select_5]
-        self.navigation_button_list = [self.button_left, self.button_right]
+        self.navigation_button_list = [self.button_left, self.button_cancel, self.button_right]
         # self.inline_keyboard = InlineKeyboardMarkup([[self.select_left, self.select_select, self.select_right]])
     
     def save(self):
         with open(self.SAVE_FILE, "wb") as f:
             pickle.dump(self._glist, f, pickle.HIGHEST_PROTOCOL) # Save the whole GroceryList, might add more fields in future
+
+    async def delete_grocery_prompts(self, query: CallbackQuery):
+        await query.message.chat.delete_messages([m.id for m in self.sent_media_group])
+        if query.message.is_accessible:
+            await query.message.delete()
+
+    def get_formal_name(self, index: int):
+        """
+        Get product name + price. 
+
+        Zero based index of self.product_options
+        """
+        return f"{self.product_options[index].item_name} {self.product_options[index].item_price}"
+
+    async def send_media_group(self, chat: Chat):
+        """
+        Prompt user with media group and inline keyboard.
+        
+        Updates self.sent_media_group.
+
+        Zero based index window of self.product_options
+        """
+        # print("Product options length", self.product_options)
+        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
+        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
+        self.sent_media_group = await chat.send_media_group(image_urls, read_timeout=30)
+        
+        caption = "Here are some products:\n"
+        for id in range(len(self.sent_media_group)):
+            caption += f"{id+1}) {self.get_formal_name(id+self.po_start_window)}\n"
+
+
+        # print("Full options:\n")
+        # map(lambda p: print(p.item_name), self.product_options)
+
+        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:len(self.sent_media_group)], self.navigation_button_list])
+        await chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
 
     async def handle_message(self, user_msg: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         print("GM handling message")
@@ -79,20 +116,8 @@ class GroceryManager:
             return
 
 
-        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
-        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
-        self.sent_media_group = await update.effective_chat.send_media_group(image_urls, read_timeout=30)
-        
-        print("Sanity Check")
-        for i in range(min(5, len(self.product_options))):
-            print(self.product_options[i].item_name, self.product_options[i].item_price)
-        
-        caption = "Here are some products:\n"
-        for p in self.product_options[self.po_start_window:po_end_window]:
-            caption += f"{p.item_name} {p.item_price}\n"
-
-        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:po_end_window-self.po_start_window], self.navigation_button_list])
-        await update.effective_chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
+        await self.send_media_group(update.effective_chat)
+ 
 
     async def onInlineButtonPress(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
@@ -109,32 +134,22 @@ class GroceryManager:
             self.po_start_window += self.window_size
             if self.po_start_window >= len(self.product_options):
                 self.po_start_window = 0
+        elif query.data == "cancel":
+            await query.answer("Cancelling query.")
+            await self.delete_grocery_prompts(query)
+            return
+
         elif query.data in "12345":
-            index = int(query.data) - 1
-            product = f"{self.product_options[index].item_name} {self.product_options[index].item_price}"
-            self._glist.add(product)
+            id = int(query.data) - 1 + self.po_start_window
+            self._glist.add(self.get_formal_name(id))
             await query.message.chat.send_message(self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)])
 
-            await update.effective_chat.delete_messages(self.sent_media_group)
-            if query.message.is_accessible:
-                await query.message.delete()
+            await self.delete_grocery_prompts(query)
             return
-        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
-        print(self.sent_media_group)
-        await update.effective_chat.delete_messages(self.sent_media_group)
-            
-        if query.message.is_accessible:
-            await query.message.delete()
 
-        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
-        self.sent_media_group = await update.effective_chat.send_media_group(image_urls, read_timeout=30)
-        caption = "Here are some products:\n"
-        for p in self.product_options[self.po_start_window:po_end_window]:
-            caption += f"{p.item_name} {p.item_price}"
+        await self.delete_grocery_prompts(query)
 
-
-        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:po_end_window-self.po_start_window], self.navigation_button_list])
-        await update.effective_chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
+        await self.send_media_group(update.effective_chat)
 
     def get_expected_user(self) -> int:
         return self.expectedUser

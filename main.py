@@ -84,6 +84,7 @@ def main() -> None:
     app.run_polling(poll_interval=0.1)
 
     # On app shutdown
+    print("GM saving...")
     GM.save()
 
 

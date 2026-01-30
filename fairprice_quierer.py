@@ -3,7 +3,10 @@ from urllib.parse import quote
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver import Keys
 
 
 class FairpriceItem(NamedTuple):
@@ -14,15 +17,26 @@ class FairpriceItem(NamedTuple):
 class FairpriceQuerier:
 
     def __init__(self):
-        self.WEBSITE = "https://www.fairprice.com.sg/search?query="
+        self.WEBSITE = "https://www.fairprice.com.sg"
         self.NET_PRICE_XPATH = "//span[@class='sc-ab6170a9-1 sc-65bf849-1 gDJNWQ cXCGWM']"
         self.PRODUCT_IMAGE_XPATH = '//img[@class="sc-aca6d870-0 janHcI"]' # Also contains product name
 
         self.driver = webdriver.Chrome() # Do we need to quit()?
+        self.driver.get(self.WEBSITE)
         
     def query(self, search_term: str) -> list[FairpriceItem]:
-        urlsafe_query = quote(search_term)
-        self.driver.get(self.WEBSITE + urlsafe_query)
+        search_bar = self.driver.find_element(By.ID, "search-input-bar")
+        # Effectively clears search_bar. .clear() does not work
+        search_bar.send_keys(Keys.CONTROL + "a")
+        search_bar.send_keys(Keys.BACK_SPACE)
+
+        search_bar.send_keys(search_term)
+        search_bar.send_keys(Keys.ENTER)
+        try:
+            WebDriverWait(self.driver, 3, poll_frequency=0.5).until(EC.title_contains(search_term))
+        except:
+            print("No results found")
+            return []
         viewport_height = self.driver.execute_script("return window.innerHeight;")
 
         ActionChains(self.driver).scroll_by_amount(0, viewport_height).perform()
