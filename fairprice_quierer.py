@@ -21,22 +21,30 @@ class FairpriceQuerier:
         self.NET_PRICE_XPATH = "//span[@class='sc-ab6170a9-1 sc-65bf849-1 gDJNWQ cXCGWM']"
         self.PRODUCT_IMAGE_XPATH = '//img[@class="sc-aca6d870-0 janHcI"]' # Also contains product name
 
-        self.driver = webdriver.Chrome() # Do we need to quit()?
+        # options = webdriver.ChromeOptions()
+        # options.add_argument("--headless=new")
+        # self.driver = webdriver.Chrome(options=options) # Do we need to quit()?
+        self.driver = webdriver.Chrome()
         self.driver.get(self.WEBSITE)
+
+        self.previous_search = ""
         
     def query(self, search_term: str) -> list[FairpriceItem]:
-        search_bar = self.driver.find_element(By.ID, "search-input-bar")
-        # Effectively clears search_bar. .clear() does not work
-        search_bar.send_keys(Keys.CONTROL + "a")
-        search_bar.send_keys(Keys.BACK_SPACE)
+        if search_term != self.previous_search:
+            self.previous_search = search_term
+            search_bar = self.driver.find_element(By.ID, "search-input-bar")
+            # Effectively clears search_bar. .clear() does not work
+            search_bar.send_keys(Keys.CONTROL + "a")
+            search_bar.send_keys(Keys.BACK_SPACE)
 
-        search_bar.send_keys(search_term)
-        search_bar.send_keys(Keys.ENTER)
-        try:
-            WebDriverWait(self.driver, 3, poll_frequency=0.5).until(EC.title_contains(search_term))
-        except:
-            print("No results found")
-            return []
+            search_bar.send_keys(search_term)
+            search_bar.send_keys(Keys.ENTER)
+            try:
+                WebDriverWait(self.driver, 5, poll_frequency=0.5).until(EC.title_contains(search_term))
+            except:
+                print("No results found")
+                return []
+        
         viewport_height = self.driver.execute_script("return window.innerHeight;")
 
         ActionChains(self.driver).scroll_by_amount(0, viewport_height).perform()

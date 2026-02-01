@@ -88,8 +88,11 @@ class GroceryManager:
 
         Zero based index window of self.product_options
         """
-        # print("Product options length", self.product_options)
+        print("Product options length", len(self.product_options))
         po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
+        #print product urls in window
+        for p in self.product_options[self.po_start_window:po_end_window]:
+            print(p.image_url)
         image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
         self.sent_media_group = await chat.send_media_group(image_urls, read_timeout=30)
         
