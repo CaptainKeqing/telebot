@@ -42,6 +42,9 @@ class GroceryManager:
         self.isActive: bool = False
         self.expectedUser: int = -1
 
+        # To prevent multiple messages from same user being queried at once
+        self.isEngagingExpectedUser: bool = False
+
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack"]
 
         self.fpq = FairpriceQuerier()
@@ -109,13 +112,18 @@ class GroceryManager:
 
     async def handle_message(self, user_msg: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         print("GM handling message")
+        if self.isEngagingExpectedUser == True:
+            print("Already engaging expected user. Ignoring message")
+            return
         item = user_msg.strip()
 
         await update.message.reply_text("Give me a while to check...")
+        self.isEngagingExpectedUser = True
         self.product_options = self.fpq.query(item)
         self.po_start_window = 0
         if len(self.product_options) == 0:
             await update.message.reply_text("Sorry, no items found.")
+            self.isEngagingExpectedUser = False
             return
 
 
@@ -145,9 +153,10 @@ class GroceryManager:
         elif query.data in "12345":
             id = int(query.data) - 1 + self.po_start_window
             self._glist.add(self.get_formal_name(id))
-            await query.message.chat.send_message(self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)])
 
+            await query.message.chat.send_message(self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)])
             await self.delete_grocery_prompts(query)
+            self.isEngagingExpectedUser = False
             return
 
         await self.delete_grocery_prompts(query)
