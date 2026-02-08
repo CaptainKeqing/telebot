@@ -56,7 +56,7 @@ class FairpriceQuerier:
         net_prices = list(map(lambda elem: elem.text, net_price_elements))
 
         resp = []
-        for i in range(min(10, len(images))):  # Extract only the top 10
+        for i in range(min(15, len(images))):  # Extract only the top 15
             resp.append(FairpriceItem(images[i], item_names[i], net_prices[i]))
         
         return resp

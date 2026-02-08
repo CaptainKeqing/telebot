@@ -1,6 +1,7 @@
 import os
 import pickle
 import random
+from typing import NamedTuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Chat
 from telegram.ext import ContextTypes
@@ -32,6 +33,7 @@ class GroceryList:
         self._list.clear()
 
 class GroceryManager:
+
     def __init__(self):
         self.SAVE_FILE = "GM.pickle"
         if os.path.exists(self.SAVE_FILE):
@@ -66,6 +68,7 @@ class GroceryManager:
         self.navigation_button_list = [self.button_left, self.button_cancel, self.button_right]
         # self.inline_keyboard = InlineKeyboardMarkup([[self.select_left, self.select_select, self.select_right]])
     
+
     def save(self):
         with open(self.SAVE_FILE, "wb") as f:
             pickle.dump(self._glist, f, pickle.HIGHEST_PROTOCOL) # Save the whole GroceryList, might add more fields in future
@@ -103,14 +106,11 @@ class GroceryManager:
         for id in range(len(self.sent_media_group)):
             caption += f"{id+1}) {self.get_formal_name(id+self.po_start_window)}\n"
 
-
-        # print("Full options:\n")
-        # map(lambda p: print(p.item_name), self.product_options)
-
         inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:len(self.sent_media_group)], self.navigation_button_list])
         await chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
 
     async def handle_message(self, user_msg: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        
         print("GM handling message")
         if self.isEngagingExpectedUser == True:
             print("Already engaging expected user. Ignoring message")
@@ -170,6 +170,9 @@ class GroceryManager:
     async def need_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = context._user_id
         print(f"User {user} invoking need command")
+        if self.isEngagingExpectedUser == True:
+            await update.message.reply_text("You are already adding items to the grocery list. Please finish that first.")
+            return
         if self.isActive:
             print("Trying to start 2 consecutive buy operations... Not entertaining")
             await update.message.reply_text("Sorry! I cannot serve 2 people at once! Please wait till the other user has" \
@@ -181,7 +184,6 @@ class GroceryManager:
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = context._user_id
-
         print(f"User {user} invoking done command")
         if not self.isActive:
             await update.message.reply_text("Can't be done with what you haven't started!")
@@ -201,6 +203,10 @@ class GroceryManager:
         user = context._user_id
         args = context.args
         print(f"User {user} invoking remove command")
+        if self.isEngagingExpectedUser == True:
+            await update.message.reply_text("Hold on, you're in the middle of adding items. Let's finish that first.")
+            return
+
         if self.isActive and user != self.expectedUser:
             await update.message.reply_text("Another user is currently adding items. Please wait until he/she is finished.")
         descending_inds = []
@@ -224,6 +230,10 @@ class GroceryManager:
     async def clear_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = context._user_id
         print(f"User {user} invoking clear command")
+        if self.isEngagingExpectedUser == True:
+            await update.message.reply_text("Can't clear list while you're adding items. Finish up first!")
+            return
+
         if self.isActive:
             await update.message.reply_text("Can't clear list while user is actively adding items.")
             return
