@@ -45,7 +45,7 @@ class GroceryManager:
         # To prevent multiple messages from same user being queried at once
         self.isEngagingExpectedUser: bool = False
 
-        self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack"]
+        self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
         self.fpq = FairpriceQuerier()
         self.product_options = []
@@ -159,8 +159,8 @@ class GroceryManager:
             id = int(query.data) - 1 + self.po_start_window
             self._glist.add(self.get_formal_name(id))
 
-            acknowledgement_text = self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)] 
-            + f" Added {self.get_formal_name(id)} to your grocery list."
+            acknowledgement_text = (self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)] 
+                                    + f" Added {self.get_formal_name(id)} to your grocery list.")
 
             await query.message.chat.send_message(acknowledgement_text)
             await self.delete_grocery_prompts(query)
@@ -229,12 +229,20 @@ class GroceryManager:
             ". For example: /remove 2 5 7")
             return
 
+        out_of_bounds_inds = []
         for ind in descending_inds:
-            print(f"Removing {ind} from list")
-            self._glist.remove(ind)
-        
-        response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
+            if not self._glist.remove(ind):
+                out_of_bounds_inds.append(ind)
+            else:
+                print(f"Removing {ind} from list")
+        response = "Here's your compiled grocery list.\n" + self._glist.display()
         await update.message.reply_text(response)
+
+        # If any out of bounds indices, inform user
+        if len(out_of_bounds_inds) > 0:
+            await update.message.reply_text("The following item numbers were out of bounds and could not be removed: " +
+            ", ".join([str(i) for i in out_of_bounds_inds]))
+
 
     async def clear_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = context._user_id
