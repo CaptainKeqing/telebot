@@ -3,15 +3,13 @@ import logging
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes, CallbackQueryHandler
 
-from grocery_manager import GroceryManager
-
+from grocery_manager import GroceryManager, UserState
 
 logger = logging.getLogger(__name__)
 TOKEN_FILE = "bot_token.txt"
 BOT_NAME = "@ddonobot"
 
 GM = GroceryManager()
-managers = [GM]
 
 # COMMANDS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -31,31 +29,29 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # MESSAGE HANDLING
 async def handle_response(user_msg: str, user: int, update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    for manager in managers:
-        if not manager.isActive or user != manager.expectedUser:
-            continue
-
-        await manager.handle_message(user_msg, update, context)
+    await GM.handle_message(user_msg, update, context)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
     message_type: str = update.message.chat.type # group or private
     text: str = update.message.text
-    user: int = context._user_id
+    user_id: int = update.effective_user.id
 
-    print(f"User {user} said {text}")
+    print(f"User {user_id} said {text}")
 
-    # This is a QOL feature for active users to not need to Tag the bot
-    active_users = [manager.expectedUser for manager in managers]
-    # Only reply in group if tagged
     if message_type.lower() == "group" or "supergroup":
-        if BOT_NAME in text or user in active_users:
-            await handle_response(text.replace(BOT_NAME,""), user, update, context)
+        # This is a QOL feature for active users to not need to Tag the bot
+        all_users = GM.userStatesInChat.get(str(update.effective_chat.id), dict())
+        active_users = set(user_id for user_id, user_state in all_users.items() if user_state == UserState.IN_NEED)
+
+        if BOT_NAME in text or user_id in active_users:
+            await handle_response(text.replace(BOT_NAME,""), user_id, update, context)
         else:
             return
+
     elif message_type.lower() == "private":
-        await handle_response(text, user, update, context)
+        await handle_response(text, user_id, update, context)
     else:
         print("Unknown type of chat incoming. Ignoring")
 
