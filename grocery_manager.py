@@ -1,11 +1,19 @@
-import os
-import pickle
+import shelve
 import random
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Chat
+from enum import Enum
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Message
 from telegram.ext import ContextTypes
 
 from fairprice_quierer import FairpriceQuerier, FairpriceItem
+
+
+class UserState(Enum):
+    IN_NEED = 0  # After invoking /need, but not yet querying
+    ACTIVE = 1  # After at least 1 instance of querying, before /done
+    IDLE = 2    # Not in need
+
 
 class GroceryList:
     def __init__(self):
@@ -30,30 +38,30 @@ class GroceryList:
     def clear(self) -> None:
         self._list.clear()
 
+
 class GroceryManager:
-
     def __init__(self):
-        self.SAVE_FILE = "GM.pickle"
-        if os.path.exists(self.SAVE_FILE):
-            with open(self.SAVE_FILE, "rb") as f:
-                self._glist: GroceryList = pickle.load(f)
-        else:
-            self._glist: GroceryList = GroceryList()
-        self.isActive: bool = False
-        self.expectedUser: int = -1
+        self.SAVE_DB = "GM.db"
+        self.db: shelve.Shelf = shelve.open(self.SAVE_DB)
 
-        # To prevent multiple messages from same user being queried at once
-        self.isEngagingExpectedUser: bool = False
+        # To support multiple chats, we need a mapping from chat_id to GroceryList and variables
+        # Each chat will share a GroceryList instance
+        self.grocery_lists: dict[str, GroceryList] = {}
+        
+        # To prevent multiple messages from same user being queried at once during need
+        self.userStatesInChat: dict[str, dict[int, UserState]] = {}  # chat_id -> user_id -> UserState
+
+        self.product_options: dict[str, dict[int, list[FairpriceItem]]] = {}  # chat_id -> user_id -> list of FairpriceItem
+        self.po_start_windows: dict[str, dict[int, int]] = {}  # chat_id -> user_id -> list of start windows
+        self.window_size = 3  # For now, make it fixed at 3
+
+        # We separate the InputMediaPhoto list from FairpriceItem list for separation of concerns
+        self.product_options_medias: dict[str, dict[int, list[InputMediaPhoto]]] = {}  # chat_id -> user_id -> list of InputMediaPhoto
+        self.sent_media_groups: dict[str, dict[int, tuple[Message]]] = {}  # chat_id -> user_id -> tuple of telegram.Message
 
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
         self.fpq = FairpriceQuerier()
-        self.product_options = []
-        self.po_start_window = 0
-        self.window_size = 3
-
-        self.product_options_media = []
-        self.sent_media_group = []
 
         self.button_left = InlineKeyboardButton("⬅️", callback_data="L")
         self.button_right = InlineKeyboardButton("➡️", callback_data="R")
@@ -68,155 +76,238 @@ class GroceryManager:
 
         assert self.window_size <= 5, "Window size cannot be greater than 5 due to button limitations."
 
+    def get_grocery_list(self, chat_id: str) -> GroceryList:
+        if chat_id not in self.grocery_lists:
+            # Check database
+            if chat_id in self.db:
+                self.grocery_lists[chat_id] = self.db[chat_id]
+            else:
+                self.grocery_lists[chat_id] = GroceryList()
+        return self.grocery_lists[chat_id]
+
     def save(self):
-        with open(self.SAVE_FILE, "wb") as f:
-            pickle.dump(self._glist, f, pickle.HIGHEST_PROTOCOL) # Save the whole GroceryList, might add more fields in future
+        for chat_id, glist in self.grocery_lists.items():
+            self.db[chat_id] = glist
+        self.db.close()
 
     async def delete_grocery_prompts(self, query: CallbackQuery):
-        await query.message.chat.delete_messages([m.id for m in self.sent_media_group])
+        chat_id = str(query.message.chat.id)
+        user_id: int = query.from_user.id
+
+        print("Delete GP")
+        print("Chat ID:", chat_id, "User ID:", user_id)
+
+        assert chat_id in self.sent_media_groups, "delete_grocery_prompts called before any querying in chat"
+        assert user_id in self.sent_media_groups[chat_id], "delete_grocery_prompts called before any querying by user in chat"
+
+        await query.message.chat.delete_messages([m.id for m in self.sent_media_groups[chat_id][user_id]])
         if query.message.is_accessible:
             await query.message.delete()
 
-    def get_formal_name(self, index: int):
+    def get_formal_name(self, chat_id: str, user_id: int, index: int):
         """
         Get product name + price. 
 
-        Zero based index of self.product_options
+        Zero based index of product_options list
         """
-        return f"{self.product_options[index].item_name} {self.product_options[index].item_price}"
+        assert chat_id in self.product_options, "onInlineButtonPress called before any querying in chat"
+        assert user_id in self.product_options[chat_id], "onInlineButtonPress called before any querying by user in chat"
 
-    async def send_media_group(self, chat: Chat):
+        po = self.product_options[chat_id][user_id]
+        return f"{po[index].item_name} {po[index].item_price}"
+
+
+    async def send_media_group(self, update: Update):
         """
         Prompt user with media group and inline keyboard.
         
-        Updates self.sent_media_group.
+        Updates self.sent_media_groups.
 
-        Zero based index window of self.product_options
+        Zero based index window of product_options
         """
-        print("Product options length", len(self.product_options))
-        po_end_window = min(self.po_start_window + self.window_size, len(self.product_options))
-        self.sent_media_group = await chat.send_media_group(self.product_options_media[self.po_start_window:po_end_window], read_timeout=20)
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
+        print("Reply MG")
+        print("Chat ID:", chat_id, "User ID:", user_id)
+        po_media = self.product_options_medias[chat_id][user_id]
+        po_start_window = self.po_start_windows[chat_id][user_id]
+
+        po_end_window = min(po_start_window + self.window_size,
+                             len(po_media))
+
+        sent_media_group = await update.effective_chat.send_media_group(po_media[po_start_window:po_end_window], read_timeout=20)
         
         caption = "Here are some products:\n"
-        for id in range(len(self.sent_media_group)):
-            caption += f"{id+1}) {self.get_formal_name(id+self.po_start_window)}\n"
+        for id in range(len(sent_media_group)):
+            caption += f"{id+1}) {self.get_formal_name(chat_id, user_id, id+po_start_window)}\n"
 
-        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:len(self.sent_media_group)], self.navigation_button_list])
-        await chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=20)
+        inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:len(sent_media_group)], self.navigation_button_list])
+        await update.effective_chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=20)
+
+        if chat_id not in self.sent_media_groups:
+            self.sent_media_groups[chat_id] = {}
+        self.sent_media_groups[chat_id][user_id] = sent_media_group
 
     async def execute_query(self, item: str, update: Update) -> bool:
         """Executes query with FPQ and populates product_options"""
-        self.product_options = self.fpq.query(item)
-        self.product_options_media = [InputMediaPhoto(p.image_url) for p in self.product_options]
-        self.po_start_window = 0
-        if len(self.product_options) == 0:
+        chat_id = str(update.effective_chat.id)
+        user_id: int = update.effective_user.id
+        print("Execute query")
+        print("Chat ID:", chat_id, "User ID:", user_id)
+        if chat_id not in self.product_options:
+            self.product_options[chat_id] = {}
+            self.product_options_medias[chat_id] = {}
+            self.po_start_windows[chat_id] = {}
+
+        self.product_options[chat_id][user_id] = self.fpq.query(item)
+        self.product_options_medias[chat_id][user_id] = [InputMediaPhoto(p.image_url) for p in self.product_options[chat_id][user_id]]
+        self.po_start_windows[chat_id][user_id] = 0
+
+        if len(self.product_options[chat_id][user_id]) == 0:
             await update.message.reply_text("Sorry, no items found.")
             return False
         return True
 
     async def handle_message(self, user_msg: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        
         print("GM handling message")
-        if self.isEngagingExpectedUser == True:
-            print("Already engaging expected user. Ignoring message")
+        chat_id = str(update.effective_chat.id)
+        user_id: int = update.effective_user.id
+        
+        if chat_id not in self.userStatesInChat:
+            self.userStatesInChat[chat_id] = {}
+
+        if user_id not in self.userStatesInChat[chat_id]:
+            self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+
+        if self.userStatesInChat[chat_id][user_id] == UserState.ACTIVE:
+            print("User is already querying FPQ. Ignoring message")
             return
+
         item = user_msg.strip()
 
         await update.message.reply_text("Give me a while to check...")
-        self.isEngagingExpectedUser = True
-        self.product_options = self.fpq.query(item)
-        self.po_start_window = 0
+
         query_success = await self.execute_query(item, update)
         if not query_success:
-            self.isEngagingExpectedUser = False
+            await update.message.reply_text("What else do you need?")
+            self.userStatesInChat[chat_id][user_id] = UserState.IN_NEED
             return
 
-        await self.send_media_group(update.effective_chat)
+        self.userStatesInChat[chat_id][user_id] = UserState.ACTIVE
+        await self.send_media_group(update)
  
 
     async def onInlineButtonPress(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
+        chat_id = str(update.effective_chat.id)
+        user_id: int = update.effective_user.id
+        
+        assert chat_id in self.product_options, "onInlineButtonPress called before any querying in chat"
+        assert user_id in self.product_options[chat_id], "onInlineButtonPress called before any querying by user in chat"
+        # TODO: I already know there is a bug here if multiple users in same chat are querying,
+        # and a user presses another user's inline button. Fix later.
+        po = self.product_options[chat_id][user_id]
+
         if query.data == "L":
-            if len(self.product_options) <= self.window_size:
+            if len(po) <= self.window_size:
                 await query.answer("No more!")
-            self.po_start_window -= self.window_size
-            if self.po_start_window < 0:
-                self.po_start_window = len(self.product_options) - self.window_size
-                assert self.po_start_window >= 0
+            self.po_start_windows[chat_id][user_id] -= self.window_size
+            if self.po_start_windows[chat_id][user_id] < 0:
+                self.po_start_windows[chat_id][user_id] = len(po) - self.window_size
+                assert self.po_start_windows[chat_id][user_id] >= 0
+
         elif query.data == "R":
-            if len(self.product_options) <= self.window_size:
+            if len(po) <= self.window_size:
                 await query.answer("No more!")
-            self.po_start_window += self.window_size
-            if self.po_start_window >= len(self.product_options):
-                self.po_start_window = 0
+            self.po_start_windows[chat_id][user_id] += self.window_size
+            if self.po_start_windows[chat_id][user_id] >= len(po):
+                self.po_start_windows[chat_id][user_id] = 0
+
         elif query.data == "cancel":
             await query.answer("Cancelling query.")
             await self.delete_grocery_prompts(query)
-            self.isEngagingExpectedUser = False
+            self.userStatesInChat[chat_id][user_id] = UserState.IN_NEED
             return
 
         elif query.data in "12345":
-            id = int(query.data) - 1 + self.po_start_window
-            self._glist.add(self.get_formal_name(id))
+            id = int(query.data) - 1 + self.po_start_windows[chat_id][user_id]
+
+            glist = self.get_grocery_list(chat_id)
+            product_to_add = self.get_formal_name(chat_id, user_id, id)
+            glist.add(product_to_add)
 
             acknowledgement_text = (self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)] 
-                                    + f" Added {self.get_formal_name(id)} to your grocery list.")
+                                    + f" Added {product_to_add} to your grocery list.")
 
             await query.message.chat.send_message(acknowledgement_text)
             await self.delete_grocery_prompts(query)
-            self.isEngagingExpectedUser = False
+            self.userStatesInChat[chat_id][user_id] = UserState.IN_NEED
             return
 
         await self.delete_grocery_prompts(query)
 
-        await self.send_media_group(update.effective_chat)
-
-    def get_expected_user(self) -> int:
-        return self.expectedUser
+        await self.send_media_group(update)
 
     # GroceryManager commands
     async def need_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = context._user_id
-        print(f"User {user} invoking need command")
-        if self.isEngagingExpectedUser == True:
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
+        print(f"User {user_id} invoking need command")
+
+        if chat_id not in self.userStatesInChat:
+            self.userStatesInChat[chat_id] = {}
+
+        if user_id not in self.userStatesInChat[chat_id]:
+            self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+
+        if self.userStatesInChat[chat_id][user_id] == UserState.IN_NEED or self.userStatesInChat[chat_id][user_id] == UserState.ACTIVE:
+            print("User already adding items. Ignoring...")
             await update.message.reply_text("You are already adding items to the grocery list. Please finish that first.")
             return
-        if self.isActive:
-            print("Trying to start 2 consecutive buy operations... Not entertaining")
-            await update.message.reply_text("Sorry! I cannot serve 2 people at once! Please wait till the other user has" \
-            " finished adding to the list.")
-            return
-        self.isActive = True
-        self.expectedUser = user
-        await update.message.reply_text("What do you need to buy?")
+
+        # self.activeUsersInChat.setdefault(chat_id, set()).add(user_id)
+        self.userStatesInChat[chat_id][user_id] = UserState.IN_NEED
+        await update.message.reply_text(f"Hi {update.effective_user.name}. What do you need to buy?")
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = context._user_id
-        print(f"User {user} invoking done command")
-        if not self.isActive:
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
+        print(f"User {user_id} invoking done command")
+
+        if chat_id not in self.userStatesInChat:
+            self.userStatesInChat[chat_id] = {}
+
+        if user_id not in self.userStatesInChat[chat_id]:
+            self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+
+        if self.userStatesInChat[chat_id][user_id] == UserState.IDLE:
             await update.message.reply_text("Can't be done with what you haven't started!")
             return
 
-        if user != self.expectedUser:
-            print("Other user trying to stop buy operation. Ignoring...")
-            await update.message.reply_text("Don't be rude, let him finish.")
-            return
+        grocery_list = self.get_grocery_list(chat_id)
 
-        self.isActive = False
-        self.expectedUser = -1
-        response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
+        self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+        response = "Okay, here's your compiled grocery list.\n" + grocery_list.display()
         await update.message.reply_text(response)
 
     async def remove_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = context._user_id
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
         args = context.args
-        print(f"User {user} invoking remove command")
-        if self.isEngagingExpectedUser == True:
-            await update.message.reply_text("Hold on, you're in the middle of adding items. Let's finish that first.")
+        print(f"User {user_id} invoking remove command")
+
+        if chat_id not in self.userStatesInChat:
+            self.userStatesInChat[chat_id] = {}
+
+        if user_id not in self.userStatesInChat[chat_id]:
+            self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+
+        # For remove, we do not allow if ANY user is active. Race condition. Does not matter if user is IN_NEED
+        if any(map(lambda state: state == UserState.ACTIVE,
+                    self.userStatesInChat[chat_id].values())):
+            await update.message.reply_text("Hold on, someone is in the middle of adding items. Let's finish that first.")
             return
 
-        if self.isActive and user != self.expectedUser:
-            await update.message.reply_text("Another user is currently adding items. Please wait until he/she is finished.")
         descending_inds = []
         for ind in args:
             if ind.isdigit():
@@ -230,12 +321,13 @@ class GroceryManager:
             return
 
         out_of_bounds_inds = []
+        grocery_list = self.get_grocery_list(chat_id)
         for ind in descending_inds:
-            if not self._glist.remove(ind):
+            if not grocery_list.remove(ind):
                 out_of_bounds_inds.append(ind)
             else:
                 print(f"Removing {ind} from list")
-        response = "Here's your compiled grocery list.\n" + self._glist.display()
+        response = "Here's your compiled grocery list.\n" + grocery_list.display()
         await update.message.reply_text(response)
 
         # If any out of bounds indices, inform user
@@ -245,22 +337,32 @@ class GroceryManager:
 
 
     async def clear_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = context._user_id
-        print(f"User {user} invoking clear command")
-        if self.isEngagingExpectedUser == True:
-            await update.message.reply_text("Can't clear list while you're adding items. Finish up first!")
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
+        print(f"User {user_id} invoking clear command")
+
+        if chat_id not in self.userStatesInChat:
+            self.userStatesInChat[chat_id] = {}
+
+        if user_id not in self.userStatesInChat[chat_id]:
+            self.userStatesInChat[chat_id][user_id] = UserState.IDLE
+
+        # For clear, we do not allow if ANY user is querying. Race condition.
+        if any(map(lambda state: state == UserState.ACTIVE,
+                    self.userStatesInChat[chat_id].values())):
+            await update.message.reply_text("Hold on, someone is in the middle of adding items. Let's finish that first.")
             return
 
-        if self.isActive:
-            await update.message.reply_text("Can't clear list while user is actively adding items.")
-            return
-        self._glist.clear()
+        grocery_list = self.get_grocery_list(chat_id)
+        grocery_list.clear()
         await update.message.reply_text("Grocery list has been cleared.")
 
     async def display_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        user = context._user_id
-        print(f"User {user} invoking display command")
-        response = "Okay, here's your compiled grocery list.\n" + self._glist.display()
+        user_id: int = update.effective_user.id
+        chat_id = str(update.effective_chat.id)
+        print(f"User {user_id} invoking display command")
+        grocery_list = self.get_grocery_list(chat_id)
+        response = "Okay, here's your compiled grocery list.\n" + grocery_list.display()
         await update.message.reply_text(response)
 
     # Good to have functions

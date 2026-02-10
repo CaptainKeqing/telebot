@@ -1,5 +1,4 @@
 from typing import NamedTuple
-from urllib.parse import quote
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -21,9 +20,6 @@ class FairpriceQuerier:
         self.NET_PRICE_XPATH = "//span[@class='sc-ab6170a9-1 sc-65bf849-1 gDJNWQ cXCGWM']"
         self.PRODUCT_IMAGE_XPATH = '//img[@class="sc-aca6d870-0 janHcI"]' # Also contains product name
 
-        # options = webdriver.ChromeOptions()
-        # options.add_argument("--headless=new")
-        # self.driver = webdriver.Chrome(options=options) # Do we need to quit()?
         self.driver = webdriver.Chrome()
         self.driver.get(self.WEBSITE)
 
@@ -56,7 +52,7 @@ class FairpriceQuerier:
         net_prices = list(map(lambda elem: elem.text, net_price_elements))
 
         resp = []
-        for i in range(min(10, len(images))):  # Extract only the top 15
+        for i in range(min(10, len(images))):  # Extract only the top 10
             resp.append(FairpriceItem(images[i], item_names[i], net_prices[i]))
         
         return resp
