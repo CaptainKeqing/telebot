@@ -1,11 +1,9 @@
 import os
 import pickle
 import random
-from typing import NamedTuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Chat
 from telegram.ext import ContextTypes
-from telegram.error import TelegramError
 
 from fairprice_quierer import FairpriceQuerier, FairpriceItem
 
@@ -52,8 +50,9 @@ class GroceryManager:
         self.fpq = FairpriceQuerier()
         self.product_options = []
         self.po_start_window = 0
-        self.window_size = 5
+        self.window_size = 3
 
+        self.product_options_media = []
         self.sent_media_group = []
 
         self.button_left = InlineKeyboardButton("⬅️", callback_data="L")
@@ -66,8 +65,8 @@ class GroceryManager:
         self.select_5 = InlineKeyboardButton("5️⃣", callback_data="5")
         self.select_button_list = [self.select_1, self.select_2, self.select_3, self.select_4, self.select_5]
         self.navigation_button_list = [self.button_left, self.button_cancel, self.button_right]
-        # self.inline_keyboard = InlineKeyboardMarkup([[self.select_left, self.select_select, self.select_right]])
-    
+
+        assert self.window_size <= 5, "Window size cannot be greater than 5 due to button limitations."
 
     def save(self):
         with open(self.SAVE_FILE, "wb") as f:
@@ -95,19 +94,25 @@ class GroceryManager:
         Zero based index window of self.product_options
         """
         print("Product options length", len(self.product_options))
-        po_end_window = self.po_start_window + min(self.window_size, len(self.product_options))
-        #print product urls in window
-        for p in self.product_options[self.po_start_window:po_end_window]:
-            print(p.image_url)
-        image_urls = [InputMediaPhoto(p.image_url) for p in self.product_options[self.po_start_window:po_end_window]]
-        self.sent_media_group = await chat.send_media_group(image_urls, read_timeout=30)
+        po_end_window = min(self.po_start_window + self.window_size, len(self.product_options))
+        self.sent_media_group = await chat.send_media_group(self.product_options_media[self.po_start_window:po_end_window], read_timeout=20)
         
         caption = "Here are some products:\n"
         for id in range(len(self.sent_media_group)):
             caption += f"{id+1}) {self.get_formal_name(id+self.po_start_window)}\n"
 
         inline_keyboard = InlineKeyboardMarkup([self.select_button_list[:len(self.sent_media_group)], self.navigation_button_list])
-        await chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=30)
+        await chat.send_message(caption, reply_markup=inline_keyboard, read_timeout=20)
+
+    async def execute_query(self, item: str, update: Update) -> bool:
+        """Executes query with FPQ and populates product_options"""
+        self.product_options = self.fpq.query(item)
+        self.product_options_media = [InputMediaPhoto(p.image_url) for p in self.product_options]
+        self.po_start_window = 0
+        if len(self.product_options) == 0:
+            await update.message.reply_text("Sorry, no items found.")
+            return False
+        return True
 
     async def handle_message(self, user_msg: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
@@ -121,11 +126,10 @@ class GroceryManager:
         self.isEngagingExpectedUser = True
         self.product_options = self.fpq.query(item)
         self.po_start_window = 0
-        if len(self.product_options) == 0:
-            await update.message.reply_text("Sorry, no items found.")
+        query_success = await self.execute_query(item, update)
+        if not query_success:
             self.isEngagingExpectedUser = False
             return
-
 
         await self.send_media_group(update.effective_chat)
  
@@ -148,13 +152,17 @@ class GroceryManager:
         elif query.data == "cancel":
             await query.answer("Cancelling query.")
             await self.delete_grocery_prompts(query)
+            self.isEngagingExpectedUser = False
             return
 
         elif query.data in "12345":
             id = int(query.data) - 1 + self.po_start_window
             self._glist.add(self.get_formal_name(id))
 
-            await query.message.chat.send_message(self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)])
+            acknowledgement_text = self.acknowledgements[random.randint(0, len(self.acknowledgements)-1)] 
+            + f" Added {self.get_formal_name(id)} to your grocery list."
+
+            await query.message.chat.send_message(acknowledgement_text)
             await self.delete_grocery_prompts(query)
             self.isEngagingExpectedUser = False
             return
@@ -217,7 +225,8 @@ class GroceryManager:
         descending_inds.sort(reverse=True)
 
         if len(descending_inds) == 0:
-            await update.message.reply_text("Please specify an index to remove")
+            await update.message.reply_text("Proper usage: /remove <item numbers separated by space>" \
+            ". For example: /remove 2 5 7")
             return
 
         for ind in descending_inds:
