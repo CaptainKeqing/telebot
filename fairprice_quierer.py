@@ -23,7 +23,14 @@ class FairpriceQuerier:
         self.NET_PRICE_XPATH = "//span[@class='sc-ab6170a9-1 sc-65bf849-1 gDJNWQ cXCGWM']"
         self.PRODUCT_IMAGE_XPATH = '//img[@class="sc-aca6d870-0 janHcI"]' # Also contains product name
 
-        self.driver = webdriver.Chrome()
+        self.init_driver()
+
+    def init_driver(self):
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless=new')
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        self.driver = webdriver.Chrome(options)
         self.driver.get(self.WEBSITE)
         self.previous_search = ""
 
@@ -34,9 +41,7 @@ class FairpriceQuerier:
         except:
             print("Oh no driver dead")
             self.driver.quit()
-            self.driver = webdriver.Chrome()
-            self.driver.get(self.WEBSITE)
-            self.previous_search = ""
+            self.init_driver()
             return self.driver
         
     def query(self, search_term: str) -> list[FairpriceItem]:
