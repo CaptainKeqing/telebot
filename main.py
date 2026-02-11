@@ -1,9 +1,9 @@
 import logging
 
 from telegram import Update
-from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes, CallbackQueryHandler, InlineQueryHandler
+from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes, InlineQueryHandler
 
-from grocery_manager import GroceryManager, UserState
+from grocery_manager import GroceryManager
 
 logger = logging.getLogger(__name__)
 TOKEN_FILE = "bot_token.txt"

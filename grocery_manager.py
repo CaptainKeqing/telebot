@@ -1,18 +1,10 @@
 import shelve
 import random
 
-from enum import Enum
-
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update, CallbackQuery, Message, InlineQuery, InlineQueryResult, InlineQueryResultPhoto, InlineQueryResultArticle, InputTextMessageContent
+from telegram import Update, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
 from fairprice_quierer import FairpriceQuerier, FairpriceItem
-
-
-class UserState(Enum):
-    IN_NEED = 0  # After invoking /need, but not yet querying
-    ACTIVE = 1  # After at least 1 instance of querying, before /done
-    IDLE = 2    # Not in need
 
 
 class GroceryList:
@@ -50,33 +42,9 @@ class GroceryManager:
         # Each chat will share a GroceryList instance
         self.grocery_lists: dict[str, GroceryList] = {}
         
-        # To prevent multiple messages from same user being queried at once during need
-        self.userStatesInChat: dict[str, dict[int, UserState]] = {}  # chat_id -> user_id -> UserState
-
-        self.product_options: dict[str, dict[int, list[FairpriceItem]]] = {}  # chat_id -> user_id -> list of FairpriceItem
-        self.po_start_windows: dict[str, dict[int, int]] = {}  # chat_id -> user_id -> list of start windows
-        self.window_size = 3  # For now, make it fixed at 3
-
-        # We separate the InputMediaPhoto list from FairpriceItem list for separation of concerns
-        self.product_options_medias: dict[str, dict[int, list[InputMediaPhoto]]] = {}  # chat_id -> user_id -> list of InputMediaPhoto
-        self.sent_media_groups: dict[str, dict[int, tuple[Message]]] = {}  # chat_id -> user_id -> tuple of telegram.Message
-
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
         self.fpq = FairpriceQuerier()
-
-        self.button_left = InlineKeyboardButton("⬅️", callback_data="L")
-        self.button_right = InlineKeyboardButton("➡️", callback_data="R")
-        self.button_cancel = InlineKeyboardButton("❌️", callback_data="cancel")
-        self.select_1 = InlineKeyboardButton("1️⃣", callback_data="1")
-        self.select_2 = InlineKeyboardButton("2️⃣", callback_data="2")
-        self.select_3 = InlineKeyboardButton("3️⃣", callback_data="3")
-        self.select_4 = InlineKeyboardButton("4️⃣", callback_data="4")
-        self.select_5 = InlineKeyboardButton("5️⃣", callback_data="5")
-        self.select_button_list = [self.select_1, self.select_2, self.select_3, self.select_4, self.select_5]
-        self.navigation_button_list = [self.button_left, self.button_cancel, self.button_right]
-
-        assert self.window_size <= 5, "Window size cannot be greater than 5 due to button limitations."
 
     def is_message_signed(self, text: str) -> bool:
         found = True
@@ -152,7 +120,6 @@ class GroceryManager:
         # But we use the GM inlineMessageSignature with a zero-width space to identify messages from ourselves
 
         if self.is_message_signed(text):
-            print("Found signature, adding to Glist")
             self.add_to_grocery_list(chat_id, text)
             ack = random.choice(self.acknowledgements)
             await update.message.reply_text(ack)
