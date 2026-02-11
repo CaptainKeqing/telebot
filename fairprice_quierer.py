@@ -1,4 +1,7 @@
 from typing import NamedTuple
+from queue import Queue
+import threading
+import time
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -22,10 +25,22 @@ class FairpriceQuerier:
 
         self.driver = webdriver.Chrome()
         self.driver.get(self.WEBSITE)
-
         self.previous_search = ""
+
+    def get_driver(self):
+        try:
+            if self.driver.title:  # Simple operation to check if driver is alive
+                return self.driver
+        except:
+            print("Oh no driver dead")
+            self.driver.quit()
+            self.driver = webdriver.Chrome()
+            self.driver.get(self.WEBSITE)
+            self.previous_search = ""
+            return self.driver
         
     def query(self, search_term: str) -> list[FairpriceItem]:
+        self.get_driver()  # Ensure driver is alive
         if search_term != self.previous_search:
             self.previous_search = search_term
             search_bar = self.driver.find_element(By.ID, "search-input-bar")
@@ -56,3 +71,38 @@ class FairpriceQuerier:
             resp.append(FairpriceItem(images[i], item_names[i], net_prices[i]))
         
         return resp
+
+class FPQLoadBalancer: 
+    def __init__(self, num_instances: int = 2):
+        self.pool: Queue[FairpriceQuerier] = Queue()
+        for _ in range(num_instances):
+            self.pool.put(FairpriceQuerier())
+        
+        # Start background thread for periodic pinging
+        self.ping_thread = threading.Thread(target=self._ping_worker, daemon=True)
+        self.ping_thread.start()
+
+    def query(self, search_term: str) -> list[FairpriceItem]:
+        FPQ = self.pool.get()  # Blocks until a driver is available
+        try:
+            result = FPQ.query(search_term)
+            return result
+        finally:
+            self.pool.put(FPQ)
+
+    # Do periodic pinging to keep the drivers alive, revive if necessary
+    def ping_all(self) -> None:
+        for _ in range(self.pool.qsize()):
+            FPQ = self.pool.get()
+            try:
+                driver = FPQ.get_driver()
+            finally:
+                print("Releasing driver back to pool...")
+                self.pool.put(FPQ)
+
+    def _ping_worker(self) -> None:
+        """Background worker that pings all drivers every 5 minutes."""
+        while True:
+            print("Pinging all FairpriceQuerier instances to keep them alive...")
+            time.sleep(300)  # 5 minutes
+            self.ping_all()

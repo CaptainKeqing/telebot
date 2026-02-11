@@ -1,11 +1,17 @@
 import shelve
 import random
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 from telegram import Update, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
-from fairprice_quierer import FairpriceQuerier, FairpriceItem
+from fairprice_quierer import FairpriceItem, FPQLoadBalancer
 
+
+POOL_SIZE = 3
+executor = ThreadPoolExecutor(max_workers=POOL_SIZE)
 
 class GroceryList:
     def __init__(self):
@@ -44,7 +50,7 @@ class GroceryManager:
         
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
-        self.fpq = FairpriceQuerier()
+        self.FPQ = FPQLoadBalancer(num_instances=POOL_SIZE)
 
     def is_message_signed(self, text: str) -> bool:
         found = True
@@ -67,7 +73,13 @@ class GroceryManager:
             return
         
         # Query products from FairPrice
-        products = self.fpq.query(query_text)
+        loop = asyncio.get_running_loop()
+
+        products = await loop.run_in_executor(
+            executor,
+            self.FPQ.query,
+            query_text
+        )
         
         if not products:
             print("No products found for inline query.")
