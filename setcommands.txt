@@ -1,7 +1,5 @@
 start - Starts the bot
 help - Tells you what dono bot can do
-need - Start adding groceries to buy
-done - Finish adding groceries
 remove - Specify indexes to remove from list
 clear - Clear grocery list
 display - Prints out the current grocery list
