@@ -22,7 +22,7 @@ def get_available_ram_linux_gb():
 ESTIMATE_RAM_PER_DRIVER_GB = 0.6  # Estimated RAM usage per Selenium driver in GB
 available_ram = get_available_ram_linux_gb()
 num_drivers = max(1, int(available_ram / ESTIMATE_RAM_PER_DRIVER_GB))
-num_drivers = min(2, num_drivers)  # Cap at 5 drivers
+num_drivers = min(5, num_drivers)  # Cap at 5 drivers
 
 print(f"Available RAM: {available_ram:.2f} GB, setting up to {num_drivers} workers.")
 GM = GroceryManager(num_drivers)

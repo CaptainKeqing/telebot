@@ -127,15 +127,18 @@ class FPQLoadBalancer:
                 for line in f.readlines()
             ]
 
+        # TODO Any error here stops caching entirely
         tasks = [
             loop.run_in_executor(self.executor, self._query_selenium, term)
             for term in search_terms
         ]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for term, result in zip(search_terms, results):
-            self.cached_results[term] = result
-
+            if isinstance(result, Exception):
+                    print(f"[CACHE ERROR] {term}: {result}")
+            else:
+                self.cached_results[term] = result
 
     def get(self, search_term: str) -> list[FairpriceItem]:
         search_term = search_term.strip().lower()

@@ -2,12 +2,11 @@ import shelve
 import random
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 from telegram import Update, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
-from fairprice_quierer import FairpriceItem, FPQLoadBalancer
+from fairprice_quierer import FPQLoadBalancer
 
 
 class GroceryList:
