@@ -2,16 +2,12 @@ import shelve
 import random
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 from telegram import Update, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
-from fairprice_quierer import FairpriceItem, FPQLoadBalancer
+from fairprice_quierer import FPQLoadBalancer
 
-
-POOL_SIZE = 3
-executor = ThreadPoolExecutor(max_workers=POOL_SIZE)
 
 class GroceryList:
     def __init__(self):
@@ -38,7 +34,7 @@ class GroceryList:
 
 
 class GroceryManager:
-    def __init__(self):
+    def __init__(self, num_drivers):
         self.inlineMessageSignature = "\u0020\u2004\u2005\u0020\u00A0"
         self.inlineMessageSignatureORD = [ord(c) for c in self.inlineMessageSignature]
         self.SAVE_DB = "GM.db"
@@ -50,8 +46,10 @@ class GroceryManager:
         
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
-        self.FPQ = FPQLoadBalancer(num_instances=POOL_SIZE)
+        self.FPQ = FPQLoadBalancer(num_drivers)
 
+    async def initialise(self):
+        await self.FPQ.initialise()
     def is_message_signed(self, text: str) -> bool:
         found = True
         # Assume signature is tagged on the back
@@ -76,8 +74,8 @@ class GroceryManager:
         loop = asyncio.get_running_loop()
 
         products = await loop.run_in_executor(
-            executor,
-            self.FPQ.query,
+            self.FPQ.executor,
+            self.FPQ.get,
             query_text
         )
         
@@ -89,7 +87,7 @@ class GroceryManager:
         # Build inline query results with product info
         iqrs = []
         for idx, product in enumerate(products):
-            print("Product found:", product)
+            # print("Product found:", product)
             message_text = self.sign_message(f"{product.item_name} - {product.item_price}")
             iqr = InlineQueryResultArticle(
                 id=f"product_{idx}",
@@ -190,10 +188,10 @@ class GroceryManager:
         response = "Okay, here's your compiled grocery list.\n" + grocery_list.display()
         await update.message.reply_text(response)
 
-    # Good to have functions
-    def get_cost(self, item: str) -> list[FairpriceItem]:
-        """Webscraping to get cost"""
-        return self.fpq.query(item)
+    # # Good to have functions
+    # def get_cost(self, item: str) -> list[FairpriceItem]:
+    #     """Webscraping to get cost"""
+    #     return self.fpq.query(item)
 
     def get_closest_supermarkets(self, location):
         pass

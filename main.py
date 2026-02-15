@@ -9,8 +9,23 @@ logger = logging.getLogger(__name__)
 TOKEN_FILE = "bot_token.txt"
 BOT_NAME = "@ddonobot"
 
-GM = GroceryManager()
+def get_available_ram_linux_gb():
+    """
+    Retrieves available RAM in GB on Linux by parsing /proc/meminfo.
+    """
+    with open('/proc/meminfo') as file:
+        for line in file:
+            if 'MemAvailable:' in line:
+                # The value is in the second column
+                return int(line.split()[1]) / (1024**2)
+    return 0
+ESTIMATE_RAM_PER_DRIVER_GB = 0.6  # Estimated RAM usage per Selenium driver in GB
+available_ram = get_available_ram_linux_gb()
+num_drivers = max(1, int(available_ram / ESTIMATE_RAM_PER_DRIVER_GB))
+num_drivers = min(5, num_drivers)  # Cap at 5 drivers
 
+print(f"Available RAM: {available_ram:.2f} GB, setting up to {num_drivers} workers.")
+GM = GroceryManager(num_drivers)
 # COMMANDS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Hello! I'm donobot.")
@@ -30,12 +45,21 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} cause error {context.error.with_traceback(None)}")
 
 
+async def post_init_callback(application: Application) -> None:
+    try:
+        await GM.initialise()
+    except Exception as e:
+        print(f"Error during GM initialisation: {e}")
+
+
+
 def main() -> None:
     with open(TOKEN_FILE, "r") as f:
         TOKEN = f.readline().strip()
 
+    print("GM initialising...")
     print("Bot starting...")
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(post_init_callback).build()
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
 

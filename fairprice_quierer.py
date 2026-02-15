@@ -3,12 +3,16 @@ from queue import Queue
 import threading
 import time
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver import Keys
+from selenium.common.exceptions import NoSuchElementException
 
 
 class FairpriceItem(NamedTuple):
@@ -27,8 +31,18 @@ class FairpriceQuerier:
 
     def init_driver(self):
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless=new')
         options.add_argument("--disable-gpu")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-sync")
+        options.add_argument("--metrics-recording-only")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--mute-audio")
+        options.add_argument('--headless=new')
+        # options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
         self.driver = webdriver.Chrome(options)
         self.driver.get(self.WEBSITE)
@@ -40,7 +54,7 @@ class FairpriceQuerier:
                 return self.driver
         except:
             print("Oh no driver dead")
-            self.driver.quit()
+            # self.driver.quit()
             self.init_driver()
             return self.driver
         
@@ -48,13 +62,17 @@ class FairpriceQuerier:
         self.get_driver()  # Ensure driver is alive
         if search_term != self.previous_search:
             self.previous_search = search_term
-            search_bar = self.driver.find_element(By.ID, "search-input-bar")
-            # Effectively clears search_bar. .clear() does not work
-            search_bar.send_keys(Keys.CONTROL + "a")
-            search_bar.send_keys(Keys.BACK_SPACE)
+            try:
+                search_bar = self.driver.find_element(By.ID, "search-input-bar")
+                # Effectively clears search_bar. .clear() does not work
+                search_bar.send_keys(Keys.CONTROL + "a")
+                search_bar.send_keys(Keys.BACK_SPACE)
 
-            search_bar.send_keys(search_term)
-            search_bar.send_keys(Keys.ENTER)
+                search_bar.send_keys(search_term)
+                search_bar.send_keys(Keys.ENTER)
+            except NoSuchElementException:
+                print("Search bar not found")
+                return []
             try:
                 WebDriverWait(self.driver, 5, poll_frequency=0.5).until(EC.title_contains(search_term))
             except:
@@ -87,7 +105,61 @@ class FPQLoadBalancer:
         self.ping_thread = threading.Thread(target=self._ping_worker, daemon=True)
         self.ping_thread.start()
 
-    def query(self, search_term: str) -> list[FairpriceItem]:
+        self.max_workers = num_instances
+
+        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        self.cache_lock = threading.Lock()
+
+
+    async def initialise(self):
+        await self.cacheCommonFoods()
+
+    async def cacheCommonFoods(self):
+        # Query products from FairPrice
+        loop = asyncio.get_running_loop()
+
+        COMMON_FOODS_FILE = "common_foods.txt"
+
+        self.cached_results: dict[str, list[FairpriceItem]] = {}
+        with open(COMMON_FOODS_FILE, "r") as f:
+            search_terms = [
+                line.strip().lower()
+                for line in f.readlines()
+            ]
+
+        # TODO Any error here stops caching entirely
+        tasks = [
+            loop.run_in_executor(self.executor, self._query_selenium, term)
+            for term in search_terms
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for term, result in zip(search_terms, results):
+            if isinstance(result, Exception):
+                    print(f"[CACHE ERROR] {term}: {result}")
+            else:
+                self.cached_results[term] = result
+
+    def get(self, search_term: str) -> list[FairpriceItem]:
+        search_term = search_term.strip().lower()
+
+        # 1️⃣ Check cache safely
+        with self.cache_lock:
+            if search_term in self.cached_results:
+                print("Search term found in cache:", search_term)
+                return self.cached_results[search_term]
+
+        # 2️⃣ Not in cache → query selenium
+        result = self._query_selenium(search_term)
+
+        # 3️⃣ Store in cache safely
+        with self.cache_lock:
+            self.cached_results[search_term] = result
+
+        return result
+
+    def _query_selenium(self, search_term: str) -> list[FairpriceItem]:
+        print("Querying:", search_term)
         FPQ = self.pool.get()  # Blocks until a driver is available
         try:
             result = FPQ.query(search_term)
@@ -97,17 +169,17 @@ class FPQLoadBalancer:
 
     # Do periodic pinging to keep the drivers alive, revive if necessary
     def ping_all(self) -> None:
+        print("Pinging all FairpriceQuerier instances...")
         for _ in range(self.pool.qsize()):
             FPQ = self.pool.get()
             try:
                 driver = FPQ.get_driver()
             finally:
-                print("Releasing driver back to pool...")
+                # print("Releasing driver back to pool...")
                 self.pool.put(FPQ)
 
     def _ping_worker(self) -> None:
         """Background worker that pings all drivers every 5 minutes."""
         while True:
-            print("Pinging all FairpriceQuerier instances to keep them alive...")
             time.sleep(300)  # 5 minutes
             self.ping_all()
