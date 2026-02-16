@@ -5,6 +5,7 @@ import time
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from collections import OrderedDict
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -95,6 +96,50 @@ class FairpriceQuerier:
         
         return resp
 
+class LRUCache:
+    def __init__(self, max_size=10_000, ttl_seconds=3600):
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+        self._cache: OrderedDict[str, tuple[float, list[FairpriceItem]]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def size(self):
+        return len(self._cache)
+
+    def get(self, key: str):
+        now = time.time()
+
+        with self._lock:
+            if key not in self._cache:
+                return None
+
+            timestamp, value = self._cache[key]
+
+            # TTL check
+            if now - timestamp > self._ttl:
+                del self._cache[key]
+                return None
+
+            # Mark as recently used
+            # Note: We do not refresh TTL as underlying data may change
+            self._cache.move_to_end(key)
+            return value
+
+    def set(self, key: str, value: list[FairpriceItem]):
+        assert len(value) > 0, "We should not be saving empty results"
+        now = time.time()
+
+        with self._lock:
+            if key in self._cache:
+                assert False, "we should never insert when key is in cache alr"
+                self._cache.move_to_end(key)
+
+            self._cache[key] = (now, value)
+
+            # LRU eviction
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
 class FPQLoadBalancer: 
     def __init__(self, num_instances: int = 2):
         self.pool: Queue[FairpriceQuerier] = Queue()
@@ -108,8 +153,8 @@ class FPQLoadBalancer:
         self.max_workers = num_instances
 
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
-        self.cache_lock = threading.Lock()
 
+        self.cache = LRUCache()
 
     async def initialise(self):
         await self.cacheCommonFoods()
@@ -118,9 +163,10 @@ class FPQLoadBalancer:
         # Query products from FairPrice
         loop = asyncio.get_running_loop()
 
+        # COMMON_FOODS_FILE = "common_foods_mini.txt"
         COMMON_FOODS_FILE = "fairprice_common_search_terms_categorized.txt"
 
-        self.cached_results: dict[str, list[FairpriceItem]] = {}
+        # self.cached_results: dict[str, list[FairpriceItem]] = {}
         with open(COMMON_FOODS_FILE, "r") as f:
             search_terms = [
                 line.strip().lower()
@@ -138,23 +184,22 @@ class FPQLoadBalancer:
             if isinstance(result, Exception):
                     print(f"[CACHE ERROR] {term}: {result}")
             else:
-                self.cached_results[term] = result
+                self.cache.set(term, result)
 
     def get(self, search_term: str) -> list[FairpriceItem]:
         search_term = search_term.strip().lower()
 
         # 1️⃣ Check cache safely
-        with self.cache_lock:
-            if search_term in self.cached_results:
-                print("Search term found in cache:", search_term)
-                return self.cached_results[search_term]
+        if (cache_result := self.cache.get(search_term)) is not None:
+            print("Search term found in cache:", search_term)
+            return cache_result
 
         # 2️⃣ Not in cache → query selenium
         result = self._query_selenium(search_term)
 
         # 3️⃣ Store in cache safely
-        with self.cache_lock:
-            self.cached_results[search_term] = result
+        if len(result) > 0:
+            self.cache.set(search_term, result)
 
         return result
 
@@ -170,7 +215,7 @@ class FPQLoadBalancer:
     # Do periodic pinging to keep the drivers alive, revive if necessary
     def ping_all(self) -> None:
         print("Pinging all FairpriceQuerier instances...")
-        print("Current num cache entries:", len(self.cached_results.keys()))
+        print("Current num cache entries:", self.cache.size())
         for _ in range(self.pool.qsize()):
             FPQ = self.pool.get()
             try:
