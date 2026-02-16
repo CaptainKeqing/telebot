@@ -3,118 +3,118 @@ apple
 apples
 banana
 bananas
-orange
-oranges
-orange juice
+dragonfruit
 grape
 grapes
-watermelon
-papaya
 honeydew
-dragonfruit
-mango
-mangoes
+kiwi
+kiwis
 lychee
 lychees
+mango
+mangoes
+orange
+orange juice
+oranges
+papaya
 pear
 pears
 pineapple
 pineapples
 plum
 plums
-strawberry
-strawberries
-kiwi
-kiwis
 prune
-prunes
 prune juice
+prunes
 raisin
 raisins
+strawberries
+strawberry
+watermelon
 
 # VEGETABLES & HERBS
+bean sprout
+bean sprouts
+bitter gourd
+bitter gourds
+bok choy
+bok choys
+brinjal
+brinjals
 broccoli
-carrot
-carrots
 cabbage
 cabbages
+carrot
+carrots
 cauliflower
 cauliflowers
 celery
+chye sim
+coriander
 cucumber
 cucumbers
-lettuce
-spinach
-bok choy
-bok choys
-chye sim
+eggplant
+eggplants
 gai lan
+garlic
+ginger
 kai lan
 kang kong
+lettuce
 long bean
 long beans
 nai bai
-bean sprout
-bean sprouts
-spring onion
-spring onions
+okra
+onion
+onions
+parsley
 scallion
 scallions
 shallot
 shallots
-garlic
-ginger
-onion
-onions
-okra
-brinjal
-brinjals
-eggplant
-eggplants
-bitter gourd
-bitter gourds
+spinach
+spring onion
+spring onions
 sweet potato leaf
 sweet potato leaves
-parsley
-coriander
 
 # MEAT & SEAFOOD
+anchovies
+anchovy
+beef steak
 chicken
-whole chicken
 chicken breast
 chicken breasts
 chicken thigh
 chicken thighs
 chicken wing
 chicken wings
+crab
+fish
+fish fillet
+fresh fish
+hotdog
+hotdogs
+ikan bilis
+luncheon meat
+minced beef
 minced chicken
+minced pork
 pork
 pork belly
 pork chop
 pork chops
 pork ribs
-minced pork
-beef steak
-minced beef
-fish
-fresh fish
-fish fillet
+prawn
+prawns
 salmon
 salmon fillet
 salmon fillets
-prawn
-prawns
-shrimp
-squid
-crab
-ikan bilis
-anchovy
-anchovies
 sausage
 sausages
-hotdog
-hotdogs
-luncheon meat
+shrimp
+squid
+whole chicken
 
 # RICE, NOODLES & CARBS
 basmati rice
