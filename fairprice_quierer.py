@@ -42,7 +42,7 @@ class FairpriceQuerier:
         options.add_argument("--disable-default-apps")
         options.add_argument("--mute-audio")
         options.add_argument('--headless=new')
-        # options.add_argument("--disable-gpu")
+        options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
         self.driver = webdriver.Chrome(options)
         self.driver.get(self.WEBSITE)
@@ -118,13 +118,13 @@ class FPQLoadBalancer:
         # Query products from FairPrice
         loop = asyncio.get_running_loop()
 
-        COMMON_FOODS_FILE = "common_foods.txt"
+        COMMON_FOODS_FILE = "fairprice_common_search_terms_categorized.txt"
 
         self.cached_results: dict[str, list[FairpriceItem]] = {}
         with open(COMMON_FOODS_FILE, "r") as f:
             search_terms = [
                 line.strip().lower()
-                for line in f.readlines()
+                for line in f.readlines() if "#" not in line
             ]
 
         # TODO Any error here stops caching entirely
@@ -170,6 +170,7 @@ class FPQLoadBalancer:
     # Do periodic pinging to keep the drivers alive, revive if necessary
     def ping_all(self) -> None:
         print("Pinging all FairpriceQuerier instances...")
+        print("Current num cache entries:", len(self.cached_results.keys()))
         for _ in range(self.pool.qsize()):
             FPQ = self.pool.get()
             try:
