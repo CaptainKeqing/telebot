@@ -72,7 +72,8 @@ def main() -> None:
 
 
     # Inline query handler
-    app.add_handler(InlineQueryHandler(GM.inline_query_handler))
+    # block=False is essential for concurrent processing of InilneQuery
+    app.add_handler(InlineQueryHandler(GM.inline_query_handler, block=False))  
     app.add_error_handler(error)
 
     print("Polling...")

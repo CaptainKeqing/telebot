@@ -1,0 +1,340 @@
+# FRUITS
+apple
+apples
+banana
+bananas
+dragonfruit
+grape
+grapes
+honeydew
+kiwi
+kiwis
+lychee
+lychees
+mango
+mangoes
+orange
+orange juice
+oranges
+papaya
+pear
+pears
+pineapple
+pineapples
+plum
+plums
+prune
+prune juice
+prunes
+raisin
+raisins
+strawberries
+strawberry
+watermelon
+
+# VEGETABLES & HERBS
+bean sprout
+bean sprouts
+bitter gourd
+bitter gourds
+bok choy
+bok choys
+brinjal
+brinjals
+broccoli
+cabbage
+cabbages
+carrot
+carrots
+cauliflower
+cauliflowers
+celery
+chye sim
+coriander
+cucumber
+cucumbers
+eggplant
+eggplants
+gai lan
+garlic
+ginger
+kai lan
+kang kong
+lettuce
+long bean
+long beans
+nai bai
+okra
+onion
+onions
+parsley
+scallion
+scallions
+shallot
+shallots
+spinach
+spring onion
+spring onions
+sweet potato leaf
+sweet potato leaves
+
+# MEAT & SEAFOOD
+anchovies
+anchovy
+beef steak
+chicken
+chicken breast
+chicken breasts
+chicken thigh
+chicken thighs
+chicken wing
+chicken wings
+crab
+fish
+fish fillet
+fresh fish
+hotdog
+hotdogs
+ikan bilis
+luncheon meat
+minced beef
+minced chicken
+minced pork
+pork
+pork belly
+pork chop
+pork chops
+pork ribs
+prawn
+prawns
+salmon
+salmon fillet
+salmon fillets
+sausage
+sausages
+shrimp
+squid
+whole chicken
+
+# RICE, NOODLES & CARBS
+basmati rice
+bee hoon
+brown rice
+burger bun
+burger buns
+croissant
+croissants
+glutinous rice
+instant noodle
+instant noodles
+jasmine rice
+kway teow
+noodle
+noodles
+pasta
+pasta sauce
+ramen
+rice
+rice noodle
+rice noodles
+soba
+spaghetti
+tortilla
+tortillas
+udon
+vermicelli
+wrap
+wraps
+
+# DAIRY & CHILLED
+almond milk
+butter
+cheddar
+cheddar cheese
+cheese
+cottage cheese
+cream
+egg tofu
+fresh milk
+greek yogurt
+low fat milk
+margarine
+milk
+mozzarella
+oat milk
+parmesan
+silken tofu
+sour cream
+soy milk
+tau kwa
+tofu
+whipping cream
+yogurt
+
+# COOKING INGREDIENTS
+baking powder
+baking soda
+breadcrumbs
+canola oil
+cinnamon
+coconut milk
+condensed milk
+cooking
+corn flour
+egg
+evaporated milk
+flour
+ghee
+oil
+olive oil
+pepper
+potato starch
+salt
+self raising flour
+sesame oil
+sugar
+sunflower oil
+vanilla
+vinegar
+yeast
+
+# SAUCES & CONDIMENTS
+chilli sauce
+curry paste
+dark soy sauce
+fish sauce
+hoisin sauce
+kaya
+kaya spread
+ketchup
+laksa paste
+light soy sauce
+mayonnaise
+mustard
+oyster sauce
+peanut butter
+rendang paste
+salted egg sauce
+sambal
+sambal belacan
+teriyaki sauce
+
+# FROZEN & READY FOOD
+dumpling
+dumplings
+fishball
+fishballs
+frozen chicken
+frozen dumpling
+frozen dumplings
+frozen fish
+frozen nugget
+frozen nuggets
+frozen pizza
+frozen prawn
+frozen seafood
+frozen vegetable
+frozen vegetables
+hashbrown
+hashbrowns
+meatball
+meatballs
+siu mai
+
+# SNACKS & BISCUITS
+almond
+almonds
+biscuit
+biscuits
+cashew
+cashews
+chocolate chip
+chocolate chips
+cream cracker
+cream crackers
+ice cream
+nuts
+pistachio
+pistachios
+potato chip
+potato chips
+potato crisp
+potato crisps
+seaweed
+snack
+wafer
+wafers
+
+# DRINKS
+100 plus
+bandung
+barley drink
+chrysanthemum tea
+coconut water
+coffee
+green tea
+hot chocolate mix
+isotonic drink
+jasmine tea
+juice
+mineral water
+orange juice
+soda
+soy bean
+soy bean milk
+soya bean
+sparkling water
+water
+
+# HOUSEHOLD & PERSONAL CARE
+aluminium foil
+bleach
+body wash
+cling wrap
+clingwrap
+conditioner
+dishwashing liquid
+disinfectant
+floor cleaner
+garbage bag
+garbage bags
+hand soap
+laundry soap
+mouthwash
+paper towel
+paper towels
+razor
+razors
+sanitary pad
+sanitary pads
+shampoo
+tissue
+tissues
+toilet paper
+toothbrush
+toothpaste
+wet wipe
+wet wipes
+ziplock
+ziplock bag
+ziplock bags
+
+# BABY
+baby formula
+baby lotion
+baby shampoo
+baby soap
+baby wipe
+baby wipes
+infant formula
+milk powder
+
+# MISC
+batteries
+battery
+beer
+cigarette
+cigarettes
+magazine
+magazines
+newspaper

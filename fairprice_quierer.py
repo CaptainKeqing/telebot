@@ -1,10 +1,12 @@
-from typing import NamedTuple
-from queue import Queue
+import asyncio
 import threading
 import time
 
-import asyncio
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from queue import Queue
+from typing import NamedTuple
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -42,7 +44,7 @@ class FairpriceQuerier:
         options.add_argument("--disable-default-apps")
         options.add_argument("--mute-audio")
         options.add_argument('--headless=new')
-        # options.add_argument("--disable-gpu")
+        options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
         self.driver = webdriver.Chrome(options)
         self.driver.get(self.WEBSITE)
@@ -95,6 +97,84 @@ class FairpriceQuerier:
         
         return resp
 
+
+
+@dataclass(slots=True)
+class CacheEntry:
+    timestamp: float
+    value: list
+    refreshing: bool = False
+
+
+class SWRLRUCache:
+    def __init__(self, max_size=10_000, ttl=3600, common_ttl=86400):
+        self._max_size = max_size
+        self._ttl = ttl
+        self._common_ttl = common_ttl
+
+        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._lock = threading.Lock()
+        self._common_terms: set[str] = set()
+
+    def set_common(self, terms: set[str]):
+        self._common_terms = terms
+
+    def get(self, key: str) -> tuple[list[FairpriceItem] | None, bool]:
+        now = time.time()
+
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None, False
+
+            ttl = self._common_ttl if key in self._common_terms else self._ttl
+            age = now - entry.timestamp
+
+            # Expired completely (hard expire)
+            if age > ttl * 2:
+                del self._cache[key]
+                return None, False
+
+            # Soft expired → return stale + refresh
+            if age > ttl:
+                if not entry.refreshing:
+                    entry.refreshing = True
+                    refresh_needed = True
+                else:
+                    refresh_needed = False
+
+                self._cache.move_to_end(key)
+                return entry.value, refresh_needed
+
+            # Fresh
+            self._cache.move_to_end(key)
+            return entry.value, False
+
+    def set(self, key: str, value: list):
+        if not value:
+            return
+
+        with self._lock:
+            self._cache[key] = CacheEntry(
+                timestamp=time.time(),
+                value=value,
+                refreshing=False,
+            )
+            self._cache.move_to_end(key)
+
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
+    def mark_refresh_complete(self, key: str):
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry:
+                entry.refreshing = False
+
+    def size(self):
+        return len(self._cache)
+
+
 class FPQLoadBalancer: 
     def __init__(self, num_instances: int = 2):
         self.pool: Queue[FairpriceQuerier] = Queue()
@@ -106,28 +186,28 @@ class FPQLoadBalancer:
         self.ping_thread.start()
 
         self.max_workers = num_instances
-
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
-        self.cache_lock = threading.Lock()
 
+        self.cache = SWRLRUCache()
+
+        COMMON_FOODS_FILE = "fairprice_common_search_terms_categorized.txt"
+        # COMMON_FOODS_FILE = "common_foods_small.txt"
+
+        with open(COMMON_FOODS_FILE, "r") as f:
+            self.common_search_terms = [
+                line.strip().lower()
+                for line in f.readlines() if "#" not in line
+            ]
 
     async def initialise(self):
-        await self.cacheCommonFoods()
+        # Do initial caching
+        await self.cache_search_terms(self.common_search_terms)
+        self.cache.set_common(set(self.common_search_terms))
 
-    async def cacheCommonFoods(self):
+    async def cache_search_terms(self, search_terms):
         # Query products from FairPrice
         loop = asyncio.get_running_loop()
 
-        COMMON_FOODS_FILE = "common_foods.txt"
-
-        self.cached_results: dict[str, list[FairpriceItem]] = {}
-        with open(COMMON_FOODS_FILE, "r") as f:
-            search_terms = [
-                line.strip().lower()
-                for line in f.readlines()
-            ]
-
-        # TODO Any error here stops caching entirely
         tasks = [
             loop.run_in_executor(self.executor, self._query_selenium, term)
             for term in search_terms
@@ -138,25 +218,40 @@ class FPQLoadBalancer:
             if isinstance(result, Exception):
                     print(f"[CACHE ERROR] {term}: {result}")
             else:
-                self.cached_results[term] = result
+                self.cache.set(term, result)
 
     def get(self, search_term: str) -> list[FairpriceItem]:
         search_term = search_term.strip().lower()
 
-        # 1️⃣ Check cache safely
-        with self.cache_lock:
-            if search_term in self.cached_results:
-                print("Search term found in cache:", search_term)
-                return self.cached_results[search_term]
+        cached_value, should_refresh = self.cache.get(search_term)
 
-        # 2️⃣ Not in cache → query selenium
-        result = self._query_selenium(search_term)
+        # 1️⃣ Cache miss
+        if cached_value is None:
+            print("Cache miss")
+            result = self._query_selenium(search_term)
+            if result:
+                self.cache.set(search_term, result)
+            return result
 
-        # 3️⃣ Store in cache safely
-        with self.cache_lock:
-            self.cached_results[search_term] = result
+        # 2️⃣ Cache hit
+        if should_refresh:
+            print("Cache hit stale. Background refresh")
+            # Background refresh (non-blocking)
+            threading.Thread(
+                target=self._refresh_background,
+                args=(search_term,),
+                daemon=True
+            ).start()
+        print("Cache hit fresh")
+        return cached_value
 
-        return result
+    def _refresh_background(self, search_term: str):
+        try:
+            result = self._query_selenium(search_term)
+            if result:
+                self.cache.set(search_term, result)
+        finally:
+            self.cache.mark_refresh_complete(search_term)
 
     def _query_selenium(self, search_term: str) -> list[FairpriceItem]:
         print("Querying:", search_term)
@@ -170,6 +265,7 @@ class FPQLoadBalancer:
     # Do periodic pinging to keep the drivers alive, revive if necessary
     def ping_all(self) -> None:
         print("Pinging all FairpriceQuerier instances...")
+        print("Current num cache entries:", self.cache.size())
         for _ in range(self.pool.qsize()):
             FPQ = self.pool.get()
             try:
