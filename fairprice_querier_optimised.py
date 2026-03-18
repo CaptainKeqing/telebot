@@ -30,7 +30,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
-from playwright.async_api import async_playwright, Browser, BrowserContext
+from playwright.async_api import async_playwright
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +78,9 @@ def _query_api(search_term: str, max_results: int = 20) -> list[FairpriceItem]:
         r.raise_for_status()
 
     data = r.json()
+    if len(data["data"]["page"]["layouts"]) < 3:
+        raise ValueError("Unexpected API response structure, most likely the item count is 0")
+
     suggested_terms = data["data"]["page"]["layouts"][1]["value"]["collection"] # Might be useful for autocomplete in future, but ignore for now
     items = data["data"]["page"]["layouts"][2]["value"]["collection"]["product"]
     top_items = items[:min(max_results, len(items))]
@@ -234,6 +237,7 @@ class FPQLoadBalancer:
             # print(f"[API] {search_term} → empty, falling back to Playwright")
         except Exception as e:
             print(f"[API] {search_term} failed ({e})")
+            return []  # Return empty list on failure; 
 
     def _query(self, search_term: str) -> list[FairpriceItem]:
         return self._run(self._query_async(search_term))
