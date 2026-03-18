@@ -1,0 +1,7 @@
+# ignore all hidden directories (dotfolders)
+.*/
+
+# Don't commit bot's db
+GM.db
+
+__pycache__/

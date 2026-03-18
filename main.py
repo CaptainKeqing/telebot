@@ -1,31 +1,17 @@
 import logging
-
+import os
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, filters, Application, ContextTypes, InlineQueryHandler
 
 from grocery_manager import GroceryManager
 
 logger = logging.getLogger(__name__)
-TOKEN_FILE = "bot_token.txt"
+TOKEN_FILE = "bot_token.txt" # If you have the bot token locally in a file. If using docker, set the token as an environment variable
+
 BOT_NAME = "@ddonobot"
 
-def get_available_ram_linux_gb():
-    """
-    Retrieves available RAM in GB on Linux by parsing /proc/meminfo.
-    """
-    with open('/proc/meminfo') as file:
-        for line in file:
-            if 'MemAvailable:' in line:
-                # The value is in the second column
-                return int(line.split()[1]) / (1024**2)
-    return 0
-ESTIMATE_RAM_PER_DRIVER_GB = 0.6  # Estimated RAM usage per Selenium driver in GB
-available_ram = get_available_ram_linux_gb()
-num_drivers = max(1, int(available_ram / ESTIMATE_RAM_PER_DRIVER_GB))
-num_drivers = min(5, num_drivers)  # Cap at 5 drivers
 
-print(f"Available RAM: {available_ram:.2f} GB, setting up to {num_drivers} workers.")
-GM = GroceryManager(num_drivers)
+GM = GroceryManager()
 # COMMANDS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Hello! I'm donobot.")
@@ -54,9 +40,15 @@ async def post_init_callback(application: Application) -> None:
 
 
 def main() -> None:
-    with open(TOKEN_FILE, "r") as f:
-        TOKEN = f.readline().strip()
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, "r") as f:
+            TOKEN = f.readline().strip()
+    else:
+        TOKEN = os.environ["BOT_TOKEN"]
 
+    if not TOKEN:
+        print("Error: Bot token not found. Please provide a token in bot_token.txt or set the BOT_TOKEN environment variable.")
+        return
     print("GM initialising...")
     print("Bot starting...")
     app = Application.builder().token(TOKEN).post_init(post_init_callback).build()
@@ -77,7 +69,7 @@ def main() -> None:
     app.add_error_handler(error)
 
     print("Polling...")
-    app.run_polling(poll_interval=0.1)
+    app.run_polling(poll_interval=0.2)
 
     # On app shutdown
     print("GM saving...")

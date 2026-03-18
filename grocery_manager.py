@@ -33,7 +33,7 @@ class GroceryList:
 
 
 class GroceryManager:
-    def __init__(self, num_drivers):
+    def __init__(self):
         self.inlineMessageSignature = "\u0020\u2004\u2005\u0020\u00A0"
         self.inlineMessageSignatureORD = [ord(c) for c in self.inlineMessageSignature]
         self.SAVE_DB = "GM.db"
@@ -94,8 +94,8 @@ class GroceryManager:
 
             # Use HTML formatting in the sent message (via parse_mode="HTML")
             if promo_price:
-                item_price = promo_price
                 result_description = f"${item_price} -> ${promo_price}"
+                item_price = promo_price
             else:
                 result_description = f"${item_price}"
 
