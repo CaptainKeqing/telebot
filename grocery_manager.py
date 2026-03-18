@@ -6,8 +6,7 @@ import asyncio
 from telegram import Update, InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
-from fairprice_quierer import FPQLoadBalancer
-
+from fairprice_querier_optimised import FPQLoadBalancer
 
 class GroceryList:
     def __init__(self):
@@ -46,10 +45,11 @@ class GroceryManager:
         
         self.acknowledgements = ["Okay!", "Got it.", "Writing that down...", "Ack."]
 
-        self.FPQ = FPQLoadBalancer(num_drivers)
+        self.FPQ = FPQLoadBalancer()
 
     async def initialise(self):
         await self.FPQ.initialise()
+
     def is_message_signed(self, text: str) -> bool:
         found = True
         # Assume signature is tagged on the back
@@ -74,7 +74,7 @@ class GroceryManager:
         loop = asyncio.get_running_loop()
 
         products = await loop.run_in_executor(
-            self.FPQ.executor,
+            None,
             self.FPQ.get,
             query_text
         )
@@ -84,18 +84,35 @@ class GroceryManager:
             await inline_query.answer([])
             return
         
-        # Build inline query results with product info
+        # Build inline query results with product info (promo handling)
         iqrs = []
         for idx, product in enumerate(products):
-            # print("Product found:", product)
-            message_text = self.sign_message(f"{product.item_name} - {product.item_price}")
+            # Convert price/promo to text for inline-result preview
+            item_price = str(product.item_price or "")
+            promo_price = str(product.promoPrice) if product.promoPrice is not None else None
+            promo_desc = str(product.promoDescription) if product.promoDescription is not None else None
+
+            # Use HTML formatting in the sent message (via parse_mode="HTML")
+            if promo_price:
+                item_price = promo_price
+                result_description = f"${item_price} -> ${promo_price}"
+            else:
+                result_description = f"${item_price}"
+
+            if promo_desc:
+                result_description = f"{result_description} ({promo_desc})"
+
+            message_text = self.sign_message(
+                f"{product.item_name} - ${item_price}"
+            )
+
             iqr = InlineQueryResultArticle(
                 id=f"product_{idx}",
                 thumbnail_url=product.image_url,
                 title=product.item_name,
-                description=product.item_price,
+                description=result_description,
                 input_message_content=InputTextMessageContent(
-                    message_text=message_text
+                    message_text=message_text,
                 ),
             )
             iqrs.append(iqr)
