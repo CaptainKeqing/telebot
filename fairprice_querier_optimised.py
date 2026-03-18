@@ -30,9 +30,6 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import NamedTuple, Optional
 
-from playwright.async_api import async_playwright
-
-
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -285,26 +282,3 @@ class FPQLoadBalancer:
                 self.cache.set(search_term, result)
         finally:
             self.cache.mark_refresh_complete(search_term)
-
-
-# ---------------------------------------------------------------------------
-# One-time helper: re-discover the API endpoint if FairPrice changes it
-# ---------------------------------------------------------------------------
-
-async def intercept_and_print_api_url(search_term: str = "milk"):
-    """
-    Run this once from a terminal to find the current API endpoint:
-        python -c "import asyncio; from fairprice_querier import intercept_and_print_api_url; asyncio.run(intercept_and_print_api_url())"
-    """
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        page = await browser.new_page()
-
-        async def log(response):
-            if "fairprice" in response.url and "api" in response.url:
-                print("CAPTURED:", response.url)
-
-        page.on("response", log)
-        await page.goto(f"https://www.fairprice.com.sg/search?query={search_term}")
-        await asyncio.sleep(5)
-        await browser.close()
